@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import Any, Dict
 
 import requests
@@ -10,6 +11,8 @@ app = FastAPI(title="Inference Dispatcher")
 
 BACKEND_URL = "http://inference-service:8000/predict"
 REQUEST_TIMEOUT_SECONDS = 5
+# parallel forwarders; 1 worker serializes backend and kills CPU-based HPA signal
+DISPATCHER_CONCURRENCY = max(1, int(os.environ.get("DISPATCHER_CONCURRENCY", "16")))
 REQUEST_QUEUE: asyncio.Queue = asyncio.Queue()
 DISPATCHER_QUEUE_DEPTH = Gauge(
     "dispatcher_queue_depth",
@@ -39,7 +42,8 @@ async def queue_worker() -> None:
 
 @app.on_event("startup")
 async def startup_event() -> None:
-    asyncio.create_task(queue_worker())
+    for _ in range(DISPATCHER_CONCURRENCY):
+        asyncio.create_task(queue_worker())
 
 
 @app.post("/predict")
@@ -47,7 +51,7 @@ async def predict(payload: Dict[str, Any]) -> Dict[str, Any]:
     loop = asyncio.get_running_loop()
     response_future: asyncio.Future = loop.create_future()
 
-    await REQUEST_QUEUE.put((payload, response_future))
+    await REQUEST_QUEUE.put((payload, response_future))  # queue for incoming reqs
     DISPATCHER_QUEUE_DEPTH.set(REQUEST_QUEUE.qsize())
 
     try:

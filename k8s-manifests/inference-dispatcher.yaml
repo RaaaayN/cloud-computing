@@ -1,3 +1,5 @@
+# mock-inference + inference-svc (cluster) + dispatcher + dispatcher NodePort
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,11 +22,27 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
           resources:
-            limits:
-              cpu: "1"
             requests:
-              cpu: "1"
+              cpu: "1" # HPA denominator; keep == limit for this lab
+            limits:
+              cpu: "1" # project cap: 1 core
 ---
 apiVersion: v1
 kind: Service

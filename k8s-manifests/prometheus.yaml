@@ -1,3 +1,4 @@
+# prometheus + kube-state-metrics (minikube)
 apiVersion: v1
 kind: ConfigMap
 metadata:

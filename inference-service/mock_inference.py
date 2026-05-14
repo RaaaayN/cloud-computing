@@ -18,13 +18,33 @@ INFERENCE_REQUESTS_TOTAL = Counter(
 )
 
 
+def _cpu_spin(milliseconds: int) -> None:
+    # busy-wait to raise CPU for HPA demos (sleep alone barely moves CPU%)
+    if milliseconds <= 0:
+        return
+    deadline = time.perf_counter() + milliseconds / 1000.0
+    x = 0
+    while time.perf_counter() < deadline:
+        x += 1  # noqa: B007
+
+
 @app.post("/predict")
 def predict(payload: Dict[str, Any]) -> Dict[str, Any]:
     start = time.perf_counter()
     INFERENCE_REQUESTS_TOTAL.inc()
 
-    sleep_seconds = random.uniform(0.1, 0.5)
+    sleep_seconds = random.uniform(0.1, 0.5)  # mock inference delay
     time.sleep(sleep_seconds)
+
+    spin_raw = payload.get("cpu_spin_ms")
+    spin_ms = 0
+    if isinstance(spin_raw, (int, float)):
+        spin_ms = int(spin_raw)
+    elif isinstance(spin_raw, str) and spin_raw.isdigit():
+        spin_ms = int(spin_raw)
+    spin_ms = max(0, min(spin_ms, 2000))
+    if spin_ms:
+        _cpu_spin(spin_ms)
 
     latency = time.perf_counter() - start
     INFERENCE_LATENCY_SECONDS.observe(latency)
@@ -32,6 +52,7 @@ def predict(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "ok": True,
         "sleep_seconds": round(sleep_seconds, 4),
+        "cpu_spin_ms": spin_ms,
         "latency_seconds": round(latency, 4),
         "received": payload,
     }

@@ -1,3 +1,4 @@
+# nginx lab: 2 pods, NodePort 30007, cpu req/limit 0.5
 apiVersion: apps/v1
 kind: Deployment
 metadata:
