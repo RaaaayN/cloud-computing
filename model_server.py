@@ -6,6 +6,7 @@ import io
 import numpy as np
 from aiohttp import web
 import time
+from prometheus_client import Counter, Histogram, CONTENT_TYPE_LATEST, generate_latest
 
 
 preprocessor = ResNet18_Weights.IMAGENET1K_V1.transforms()
@@ -17,6 +18,17 @@ torch.set_num_threads(1)
 
 resnet_model = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
 resnet_model.eval()
+model_ready = True
+
+INFERENCE_REQUESTS_TOTAL = Counter(
+    "inference_requests_total",
+    "Total number of inference requests",
+)
+INFERENCE_DURATION_SECONDS = Histogram(
+    "inference_duration_seconds",
+    "Server-side inference latency in seconds",
+    buckets=[0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.0],
+)
 
 
 
@@ -40,12 +52,29 @@ app = web.Application()
 
 async def infer_handler(request):
     req = await request.json()
-    return web.json_response(infer(req))
+    INFERENCE_REQUESTS_TOTAL.inc()
+    with INFERENCE_DURATION_SECONDS.time():
+        return web.json_response(infer(req))
+
+
+async def healthz_handler(_: web.Request) -> web.Response:
+    return web.json_response({"status": "ok"})
+
+
+async def readyz_handler(_: web.Request) -> web.Response:
+    return web.json_response({"ready": model_ready})
+
+
+async def metrics_handler(_: web.Request) -> web.Response:
+    return web.Response(body=generate_latest(), content_type=CONTENT_TYPE_LATEST)
     
 
 app.add_routes(
     [
         web.post("/infer", infer_handler),
+        web.get("/healthz", healthz_handler),
+        web.get("/readyz", readyz_handler),
+        web.get("/metrics", metrics_handler),
     ]
 )
 
