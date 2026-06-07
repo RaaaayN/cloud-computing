@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: loadtester
+  namespace: inference-system
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: loadtester
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8003"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: loadtester
+          image: loadtester:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--target"
+            - "http://dispatcher.inference-system.svc.cluster.local:8002"
+            - "--duration"
+            - "300"
+            - "--base"
+            - "1"
+            - "--peak"
+            - "20"
+            - "--out"
+            - "/tmp/results.csv"
+          ports:
+            - containerPort: 8003
+              name: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loadtester
+  namespace: inference-system
+  labels:
+    app: loadtester
+spec:
+  selector:
+    app: loadtester
+  ports:
+    - name: metrics
+      port: 8003
+      targetPort: 8003
+  type: ClusterIP

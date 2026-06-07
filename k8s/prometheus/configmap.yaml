@@ -15,4 +15,7 @@ data:
       - job_name: dispatcher
         static_configs:
           - targets: ["dispatcher.inference-system.svc.cluster.local:8002"]
+      - job_name: loadtester
+        static_configs:
+          - targets: ["loadtester.inference-system.svc.cluster.local:8003"]
 

@@ -1,12 +1,18 @@
 import asyncio
 import json
 import os
+from dataclasses import dataclass
+
+import aiohttp
 from aiohttp import web
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
 
 QUEUE_MAX_SIZE = int(os.getenv("DISPATCHER_QUEUE_MAX_SIZE", "100"))
-
-REQUEST_QUEUE: asyncio.Queue[str] = asyncio.Queue(maxsize=QUEUE_MAX_SIZE)
+INFERENCE_URL = os.getenv(
+    "INFERENCE_URL",
+    "http://inference.inference-system.svc.cluster.local:8001",
+)
+WORKER_COUNT = int(os.getenv("DISPATCHER_WORKER_COUNT", "4"))
 
 DISPATCHER_QUEUE_DEPTH = Gauge(
     "dispatcher_queue_depth",
@@ -22,7 +28,7 @@ DISPATCHER_REQUESTS_TOTAL = Counter(
 )
 DISPATCHER_REQUESTS_COMPLETED_TOTAL = Counter(
     "dispatcher_requests_completed_total",
-    "Total number of requests accepted by dispatcher",
+    "Total number of requests completed successfully by dispatcher",
 )
 DISPATCHER_REQUESTS_DROPPED_TOTAL = Counter(
     "dispatcher_requests_dropped_total",
@@ -30,8 +36,55 @@ DISPATCHER_REQUESTS_DROPPED_TOTAL = Counter(
 )
 
 
+@dataclass
+class QueuedRequest:
+    data: str
+    future: asyncio.Future[tuple[int, bytes]]
+
+
+REQUEST_QUEUE: asyncio.Queue[QueuedRequest | None] = asyncio.Queue(maxsize=QUEUE_MAX_SIZE)
+
+
 def refresh_queue_depth() -> None:
     DISPATCHER_QUEUE_DEPTH.set(REQUEST_QUEUE.qsize())
+
+
+async def forward_to_inference(
+    session: aiohttp.ClientSession,
+    image_data: str,
+) -> tuple[int, bytes]:
+    async with session.post(
+        f"{INFERENCE_URL.rstrip('/')}/infer",
+        json={"data": image_data},
+        timeout=aiohttp.ClientTimeout(total=30),
+    ) as response:
+        body = await response.read()
+        return response.status, body
+
+
+async def worker_loop(worker_id: int, session: aiohttp.ClientSession) -> None:
+    while True:
+        queued = await REQUEST_QUEUE.get()
+        try:
+            if queued is None:
+                return
+            refresh_queue_depth()
+            DISPATCHER_REQUESTS_IN_FLIGHT.inc()
+            try:
+                status, body = await forward_to_inference(session, queued.data)
+                if not queued.future.done():
+                    queued.future.set_result((status, body))
+                if status == 200:
+                    DISPATCHER_REQUESTS_COMPLETED_TOTAL.inc()
+            except Exception as exc:
+                if not queued.future.done():
+                    error_body = json.dumps({"error": str(exc)}).encode("utf-8")
+                    queued.future.set_result((502, error_body))
+            finally:
+                DISPATCHER_REQUESTS_IN_FLIGHT.dec()
+                refresh_queue_depth()
+        finally:
+            REQUEST_QUEUE.task_done()
 
 
 async def submit_handler(request: web.Request) -> web.Response:
@@ -50,20 +103,13 @@ async def submit_handler(request: web.Request) -> web.Response:
         refresh_queue_depth()
         return web.json_response({"error": "Queue is full"}, status=503)
 
-    DISPATCHER_REQUESTS_IN_FLIGHT.inc()
-    await REQUEST_QUEUE.put(payload["data"])
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[tuple[int, bytes]] = loop.create_future()
+    await REQUEST_QUEUE.put(QueuedRequest(data=payload["data"], future=future))
     refresh_queue_depth()
-    DISPATCHER_REQUESTS_COMPLETED_TOTAL.inc()
-    DISPATCHER_REQUESTS_IN_FLIGHT.dec()
 
-    return web.json_response(
-        {
-            "status": "accepted",
-            "message": "Request queued (stub mode, forwarding not implemented yet).",
-            "queue_depth": REQUEST_QUEUE.qsize(),
-        },
-        status=202,
-    )
+    status, body = await future
+    return web.Response(body=body, status=status, content_type="application/json")
 
 
 async def metrics_handler(_: web.Request) -> web.Response:
@@ -75,8 +121,26 @@ async def healthz_handler(_: web.Request) -> web.Response:
     return web.json_response({"status": "ok"})
 
 
+async def on_startup(app: web.Application) -> None:
+    session = aiohttp.ClientSession()
+    app["http_session"] = session
+    app["workers"] = [
+        asyncio.create_task(worker_loop(worker_id, session))
+        for worker_id in range(WORKER_COUNT)
+    ]
+
+
+async def on_cleanup(app: web.Application) -> None:
+    for _ in app["workers"]:
+        await REQUEST_QUEUE.put(None)
+    await asyncio.gather(*app["workers"], return_exceptions=True)
+    await app["http_session"].close()
+
+
 def build_app() -> web.Application:
     app = web.Application()
+    app.on_startup.append(on_startup)
+    app.on_cleanup.append(on_cleanup)
     app.add_routes(
         [
             web.post("/submit", submit_handler),
