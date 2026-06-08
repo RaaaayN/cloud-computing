@@ -1,6 +1,6 @@
-import argparse
-import asyncio
-import csv
+import argparse  #This lets you run the script from the terminal with arguments.
+import asyncio  #This simulates multiple users better.
+import csv   
 import random
 import time
 from pathlib import Path
@@ -8,37 +8,38 @@ from pathlib import Path
 import httpx
 
 SAMPLE_URL = "https://raw.githubusercontent.com/EliSchwartz/imagenet-sample-images/master/"
+
 SAMPLES = [
-    "n02085620_60.JPEG",
-    "n02123045_50.JPEG",
-    "n03445777_42.JPEG",
-    "n07873807_8.JPEG",
-    "n02690373_1.JPEG",
+    "n02085620_Chihuahua.JPEG",
+    "n02123045_tabby.JPEG",
+    "n03445777_golf_ball.JPEG",
+    "n07873807_pizza.JPEG",
+    "n02690373_airliner.JPEG",
 ]
 
 
-async def fetch_samples():
-    out = Path("samples")
+async def fetch_samples():     #This function downloads the sample images.
+    out = Path("samples")        #This means the function is asynchronous. It can wait for downloads without blocking everything.
     out.mkdir(exist_ok=True)
     imgs = []
     async with httpx.AsyncClient(timeout=30) as c:
         for n in SAMPLES:
             p = out / n
-            if not p.exists():
+            if not p.exists():    #This checks whether the image is already downloaded.
                 print(f"  downloading {n}")
-                r = await c.get(SAMPLE_URL + n)
-                r.raise_for_status()
-                p.write_bytes(r.content)
-            imgs.append(p.read_bytes())
+                r = await c.get(SAMPLE_URL + n)  #This downloads the image.
+                r.raise_for_status()  #This checks if download was successful.
+                p.write_bytes(r.content)  #This saves the downloaded image to your computer.
+            imgs.append(p.read_bytes())    #This reads the image from the file and stores it in the list as bytes.
     return imgs
 
 
-def target_rps(t, dur, base, peak):
+def target_rps(t, dur, base, peak):  #This function decides the current request rate.
     half = dur / 2
     return base + (peak - base) * (t / half if t <= half else (dur - t) / half)
 
 
-async def send(c, target, img, writer):
+async def send(c, target, img, writer):  #This function sends one image request to the ML service.
     files = {"file": ("img.jpg", img, "image/jpeg")}
     t0 = time.perf_counter()
     status = 0
@@ -50,8 +51,8 @@ async def send(c, target, img, writer):
     writer.writerow([round(time.time(), 3), status, round(time.perf_counter() - t0, 4)])
 
 
-async def run(target, dur, base, peak, out):
-    imgs = await fetch_samples()
+async def run(target, dur, base, peak, out): 
+    imgs = await fetch_samples() #First, it downloads/loads sample images.
     p = Path(out)
     p.parent.mkdir(parents=True, exist_ok=True)
     f = p.open("w", newline="")
@@ -67,8 +68,8 @@ async def run(target, dur, base, peak, out):
                 break
             rps = target_rps(now, dur, base, peak)
             interval = 1.0 / rps if rps > 0 else 1.0
-            tasks.append(asyncio.create_task(send(c, target, random.choice(imgs), w)))
-            await asyncio.sleep(interval * random.uniform(0.8, 1.2))
+            tasks.append(asyncio.create_task(send(c, target, random.choice(imgs), w)))   #This randomly chooses one image from the sample images.
+            await asyncio.sleep(interval * random.uniform(0.8, 1.2))  #This adds small randomness to the request timing.
             if len(tasks) > 500:
                 tasks = [t for t in tasks if not t.done()]
             if int(now) % 10 == 0 and now - int(now) < 0.1:
