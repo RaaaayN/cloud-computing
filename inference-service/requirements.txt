@@ -1,3 +1,8 @@
 fastapi
-prometheus_client
-uvicorn
+uvicorn[standard]
+pydantic
+torch
+torchvision
+Pillow
+numpy
+prometheus-client
