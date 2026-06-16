@@ -30,6 +30,14 @@ curl -X POST http://localhost:6001 \
 -H "Content-Type: application/json" \
 -d '{"image":"images/cat.jpg"}'
 
+#For windows
+
+Invoke-RestMethod `
+  -Uri "http://localhost:6001" `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body '{"image":"images/cat.jpg"}'
+
 
 
 In another terminal, run dispatcher:
@@ -42,13 +50,23 @@ pip install -r ../inference-service/requirements.txt
 python dispatcher_redis.py  #  runs on port 5001
 
 #start redis on another terminal
-redis-server(Mac)
+docker start redis
+docker ps
 
 test :
 
 curl -X POST http://localhost:5001/query \
 -H "Content-Type: application/json" \
 -d '{"image":"images/cat.jpg"}'
+
+#for windows
+Invoke-RestMethod `
+  -Uri "http://localhost:5001/query" `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body '{"image":"images/cat.jpg"}'
+
+
 ```
 
 
