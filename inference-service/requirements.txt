@@ -1,8 +1,9 @@
-fastapi
-uvicorn[standard]
-pydantic
+flask
+opencv-python
 torch
 torchvision
-Pillow
-numpy
-prometheus-client
+requests
+redis
+prometheus_client
+matplotlib
+pandas

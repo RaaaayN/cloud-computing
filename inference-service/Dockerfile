@@ -1,30 +1,27 @@
-FROM python:3.11-slim
+# Base image
+FROM python:3.10-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        gcc \
-        libglib2.0-0 \
-        libgl1 \
-    && rm -rf /var/lib/apt/lists/*
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/* \
+    apt-get install redis-server \
+    redis-server
 
+# Set working directory
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy all files
+COPY . .
 
-RUN python - <<'PYEOF'
-import torchvision.models as models
-try:
-    from torchvision.models import ResNet50_Weights
-    models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
-    print("ResNet-50 weights cached.")
-except Exception as e:
-    print(f"Failed: {e}")
-PYEOF
+# Upgrade pip and install dependencies in venv
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-COPY inference.py .
+# Expose Flask port
+EXPOSE 6001 8001
 
-EXPOSE 8000
 
-ENV INFERENCE_WORKERS=2 TOP_K=5
-
-CMD ["uvicorn", "inference:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--log-level", "info"]
+# Run the Flask app
+CMD ["python3", "app.py"]

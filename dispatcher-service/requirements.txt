@@ -1,4 +1,0 @@
-fastapi
-prometheus_client
-requests
-uvicorn
