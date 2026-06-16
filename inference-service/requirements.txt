@@ -1,9 +1,0 @@
-flask
-opencv-python
-torch
-torchvision
-requests
-redis
-prometheus_client
-matplotlib
-pandas
