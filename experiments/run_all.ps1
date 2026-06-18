@@ -63,7 +63,7 @@ function Invoke-Run([string]$Name, [string]$OutCsv) {
   $rows = Import-Csv $OutCsv
   $valid = ($rows | Where-Object { $_.p99_latency -ne 'nan' -and $_.p99_latency }).Count
   if ($valid -eq 0) {
-    Write-Host "!!! WARNING: '$Name' captured 0 valid p99 samples — no traffic reached inference. Check dispatcher/prometheus and the loadtester logs." -ForegroundColor Red
+    Write-Host "!!! WARNING: '$Name' captured 0 valid p99 samples - no traffic reached inference. Check dispatcher/prometheus and the loadtester logs." -ForegroundColor Red
   } else {
     Write-Host "    '$Name': $valid rows with p99 data" -ForegroundColor DarkGray
   }
