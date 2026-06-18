@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir httpx==0.27.2 aiohttp==3.9.5 prometheus_client==0.20.0
+RUN pip install --no-cache-dir httpx==0.27.2 aiohttp==3.9.5 prometheus_client==0.20.0 pillow
 
 COPY src/load_tester ./load_tester
 ENV PYTHONPATH=/app

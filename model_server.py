@@ -6,7 +6,7 @@ import io
 import numpy as np
 from aiohttp import web
 import time
-from prometheus_client import Counter, Histogram, CONTENT_TYPE_LATEST, generate_latest
+from prometheus_client import Counter, Histogram, generate_latest
 
 
 preprocessor = ResNet18_Weights.IMAGENET1K_V1.transforms()
@@ -66,7 +66,7 @@ async def readyz_handler(_: web.Request) -> web.Response:
 
 
 async def metrics_handler(_: web.Request) -> web.Response:
-    return web.Response(body=generate_latest(), content_type=CONTENT_TYPE_LATEST)
+    return web.Response(body=generate_latest(), content_type="text/plain", charset="utf-8")
     
 
 app.add_routes(

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import aiohttp
 from aiohttp import web
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
+from prometheus_client import Counter, Gauge, generate_latest
 
 QUEUE_MAX_SIZE = int(os.getenv("DISPATCHER_QUEUE_MAX_SIZE", "100"))
 INFERENCE_URL = os.getenv(
@@ -114,7 +114,7 @@ async def submit_handler(request: web.Request) -> web.Response:
 
 async def metrics_handler(_: web.Request) -> web.Response:
     refresh_queue_depth()
-    return web.Response(body=generate_latest(), content_type=CONTENT_TYPE_LATEST)
+    return web.Response(body=generate_latest(), content_type="text/plain", charset="utf-8")
 
 
 async def healthz_handler(_: web.Request) -> web.Response:

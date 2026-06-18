@@ -38,7 +38,20 @@ Linear interpolation between points. ±20% jitter on inter-request interval (`ra
 
 **Example:** `--duration 300 --base 1 --peak 20` → ramp 1→20 req/s over 150 s, then 20→1 over 150 s.
 
-> **Phase 2:** `workload.txt` bursty trace support (course brief) — not implemented yet; the triangle profile validates integration and autoscaler behavior.
+### Workload trace replay
+
+In addition to the triangle profile, the load tester can replay a recorded
+per-second RPS trace with `--workload <file>`:
+
+```bash
+python -m load_tester.run --target http://127.0.0.1:8002 --workload src/load_tester/workload.txt
+```
+
+The trace is a whitespace-separated list of per-second target RPS values
+(`src/load_tester/workload.txt`, the bursty course trace). When `--workload` is
+given, `--duration` defaults to the trace length and `--base`/`--peak` are
+ignored. The trace ships inside the loadtester image, so the K8s Job replays it
+by default.
 
 ---
 

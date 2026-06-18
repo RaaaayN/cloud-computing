@@ -281,9 +281,9 @@ python -m pytest tests/ -v
 | Item | Status |
 |------|--------|
 | Triangle load profile | Implemented |
-| `workload.txt` trace | Phase 2 |
-| HPA 70/90 manifests | Planned |
-| Benchmark CSV/plot scripts | Planned |
+| `workload.txt` trace | Implemented (`--workload` replay) |
+| HPA 70/90 manifests | Implemented (`k8s/hpa-70.yaml`, `k8s/hpa-90.yaml`) |
+| Benchmark CSV/plot scripts | Implemented (`experiments/`) |
 | PID / predictive policy | Optional extension |
 
 | Limit | Mitigation |

@@ -1,0 +1,11 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir requests==2.32.3 kubernetes==29.0.0
+
+COPY src/autoscaler ./autoscaler
+ENV PYTHONPATH=/app
+
+# ENTRYPOINT so the manifest `args` (e.g. --dry-run) append instead of replacing it
+ENTRYPOINT ["python", "-m", "autoscaler.controller"]

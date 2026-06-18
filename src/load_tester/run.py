@@ -8,7 +8,7 @@ from pathlib import Path
 
 import httpx
 from aiohttp import web
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from prometheus_client import Counter, Histogram, generate_latest
 
 from load_tester.images import build_submit_payload, fetch_samples
 
@@ -34,8 +34,22 @@ def target_rps(t: float, dur: float, base: float, peak: float) -> float:
     return base + (peak - base) * ((dur - t) / half)
 
 
+def load_workload(path: str) -> list[float]:
+    """Read a whitespace-separated trace of per-second RPS values."""
+    text = Path(path).read_text(encoding="utf-8")
+    values = [float(tok) for tok in text.split()]
+    if not values:
+        raise ValueError(f"workload file {path} is empty")
+    return values
+
+
+def workload_rps(t: float, trace: list[float]) -> float:
+    """RPS for elapsed second t from a replayed trace (clamped to the end)."""
+    return trace[min(int(t), len(trace) - 1)]
+
+
 async def metrics_handler(_: web.Request) -> web.Response:
-    return web.Response(body=generate_latest(), content_type=CONTENT_TYPE_LATEST)
+    return web.Response(body=generate_latest(), content_type="text/plain", charset="utf-8")
 
 
 async def start_metrics_server(port: int) -> web.AppRunner:
@@ -84,7 +98,11 @@ async def run(
     peak: float,
     out: str,
     metrics_port: int,
+    workload: str | None = None,
 ) -> None:
+    trace = load_workload(workload) if workload else None
+    if duration <= 0:
+        duration = float(len(trace)) if trace is not None else 300.0
     images = await fetch_samples()
     metrics_runner = await start_metrics_server(metrics_port)
 
@@ -104,7 +122,10 @@ async def run(
                     elapsed = time.perf_counter() - start
                     if elapsed >= duration:
                         break
-                    rps = target_rps(elapsed, duration, base, peak)
+                    if trace is not None:
+                        rps = workload_rps(elapsed, trace)
+                    else:
+                        rps = target_rps(elapsed, duration, base, peak)
                     interval = 1.0 / rps if rps > 0 else 1.0
                     tasks.append(
                         asyncio.create_task(
@@ -127,9 +148,20 @@ async def run(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Load tester for dispatcher /submit")
     parser.add_argument("--target", required=True, help="Dispatcher base URL")
-    parser.add_argument("--duration", type=float, default=300.0)
-    parser.add_argument("--base", type=float, default=1.0, help="Minimum RPS")
-    parser.add_argument("--peak", type=float, default=20.0, help="Peak RPS")
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=0.0,
+        help="Seconds to run (0 = workload length if --workload, else 300)",
+    )
+    parser.add_argument("--base", type=float, default=1.0, help="Minimum RPS (triangle)")
+    parser.add_argument("--peak", type=float, default=20.0, help="Peak RPS (triangle)")
+    parser.add_argument(
+        "--workload",
+        default=None,
+        help="Path to a whitespace-separated per-second RPS trace to replay "
+        "(overrides the triangle base/peak profile)",
+    )
     parser.add_argument("--out", default="results.csv")
     parser.add_argument(
         "--metrics-port",
@@ -150,6 +182,7 @@ def main() -> None:
             peak=args.peak,
             out=args.out,
             metrics_port=args.metrics_port,
+            workload=args.workload,
         )
     )
 

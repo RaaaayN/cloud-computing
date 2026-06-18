@@ -105,7 +105,10 @@ cloud-computing/
 ├── model_server.py              # ResNet18 inference service
 ├── client.py                    # Local smoke-test client
 ├── requirements.txt             # Python deps (excluding torch)
-├── docker/
+├── docker/                      # one Dockerfile per service
+│   ├── Dockerfile.inference
+│   ├── Dockerfile.dispatcher
+│   ├── Dockerfile.autoscaler
 │   └── Dockerfile.loadtester
 ├── k8s/
 │   ├── namespace.yaml
@@ -113,13 +116,18 @@ cloud-computing/
 │   ├── dispatcher-deployment.yaml
 │   ├── loadtester-job.yaml
 │   ├── autoscaler-deployment.yaml
+│   ├── hpa-70.yaml              # HPA baseline (70% CPU)
+│   ├── hpa-90.yaml              # HPA baseline (90% CPU)
 │   └── prometheus/
 ├── src/
 │   ├── dispatcher/app.py        # Queue + workers + forwarding
 │   ├── load_tester/
-│   │   ├── run.py               # Load generator
-│   │   └── images.py            # ImageNet samples as base64
+│   │   ├── run.py               # Load generator (triangle + --workload replay)
+│   │   ├── images.py            # Samples as base64 (synthetic fallback)
+│   │   └── workload.txt         # Bursty per-second RPS trace
 │   └── autoscaler/              # MAPE controller + Queue+SLO policy
+├── experiments/                 # Benchmark harness (collect.py, plot.py)
+├── reference/                   # Course materials (PDF, hands-on, notes)
 ├── tests/
 └── docs/
     ├── ARCHITECTURE.md
@@ -155,8 +163,9 @@ python -m pytest tests/ -v
 | [docs/DISPATCHER.md](docs/DISPATCHER.md) | API, queue, workers, env vars |
 | [docs/LOAD_TESTER.md](docs/LOAD_TESTER.md) | Triangle profile, CLI, Prometheus, K8s Job |
 | [docs/AUTOSCALER.md](docs/AUTOSCALER.md) | Custom autoscaler (MAPE, policy, PromQL) |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Minikube, manifests, checklist |
-| [practical_HandsOn (1).md](practical%20HandsOn%20(1).md) | Initial inference-only tutorial |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Minikube deployment, the 3-run experiment, troubleshooting |
+| [experiments/README.md](experiments/README.md) | Benchmark harness (collect + plot) |
+| [reference/practical_HandsOn.md](reference/practical_HandsOn.md) | Initial inference-only tutorial (course material) |
 
 ---
 
@@ -169,9 +178,10 @@ python -m pytest tests/ -v
 | Load tester (merged from `load-tester` branch) | Implemented |
 | Prometheus scrape (inference, dispatcher, loadtester) | Implemented |
 | Autoscaler MAPE + Queue+SLO policy | Implemented (dry-run default in K8s) |
-| HPA 70% / 90% baselines | Planned (`k8s/hpa-*.yaml`) |
-| `workload.txt` bursty trace | Phase 2 — triangle profile in place |
-| Benchmark plots / harness | Planned |
+| Container images (inference / dispatcher / autoscaler / loadtester) | Implemented (`docker/Dockerfile.*`) |
+| HPA 70% / 90% baselines | Implemented (`k8s/hpa-70.yaml`, `k8s/hpa-90.yaml`) |
+| `workload.txt` bursty trace | Implemented (`--workload` replay; trace shipped in the loadtester image) |
+| Benchmark plots / harness | Implemented (`experiments/collect.py`, `experiments/plot.py`) |
 
 ---
 

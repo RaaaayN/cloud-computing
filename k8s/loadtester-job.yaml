@@ -22,12 +22,8 @@ spec:
           args:
             - "--target"
             - "http://dispatcher.inference-system.svc.cluster.local:8002"
-            - "--duration"
-            - "300"
-            - "--base"
-            - "1"
-            - "--peak"
-            - "20"
+            - "--workload"
+            - "/app/load_tester/workload.txt"
             - "--out"
             - "/tmp/results.csv"
           ports:
