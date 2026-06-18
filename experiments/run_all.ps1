@@ -49,7 +49,7 @@ function Invoke-Run([string]$Name, [string]$OutCsv) {
 
   # background metric collector (auto-reads http://localhost:9090 via port-forward)
   $col = Start-Process -FilePath "python" `
-           -ArgumentList "experiments/collect.py","--out",$OutCsv,"--namespace",$ns `
+           -ArgumentList "experiments/collect.py","--out",$OutCsv `
            -PassThru -WindowStyle Hidden
 
   kubectl apply -f k8s/loadtester-job.yaml | Out-Null

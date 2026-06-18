@@ -1,11 +1,12 @@
 import asyncio
 import json
 import os
+import time
 from dataclasses import dataclass
 
 import aiohttp
 from aiohttp import web
-from prometheus_client import Counter, Gauge, generate_latest
+from prometheus_client import Counter, Gauge, Histogram, generate_latest
 
 QUEUE_MAX_SIZE = int(os.getenv("DISPATCHER_QUEUE_MAX_SIZE", "100"))
 INFERENCE_URL = os.getenv(
@@ -33,6 +34,13 @@ DISPATCHER_REQUESTS_COMPLETED_TOTAL = Counter(
 DISPATCHER_REQUESTS_DROPPED_TOTAL = Counter(
     "dispatcher_requests_dropped_total",
     "Total number of requests dropped by dispatcher",
+)
+# Server-side service latency of a query: from dispatcher receipt to response
+# (queue wait + inference). This is the graded SLO metric (< 0.5 s).
+DISPATCHER_REQUEST_DURATION = Histogram(
+    "dispatcher_request_duration_seconds",
+    "Server-side query latency: dispatcher receive -> response (queue + inference)",
+    buckets=[0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.0, 5.0],
 )
 
 
@@ -89,6 +97,7 @@ async def worker_loop(worker_id: int, session: aiohttp.ClientSession) -> None:
 
 async def submit_handler(request: web.Request) -> web.Response:
     DISPATCHER_REQUESTS_TOTAL.inc()
+    start = time.perf_counter()
 
     try:
         payload = await request.json()
@@ -109,6 +118,8 @@ async def submit_handler(request: web.Request) -> web.Response:
     refresh_queue_depth()
 
     status, body = await future
+    # record full server-side latency for served queries (queue wait + inference)
+    DISPATCHER_REQUEST_DURATION.observe(time.perf_counter() - start)
     return web.Response(body=body, status=status, content_type="application/json")
 
 

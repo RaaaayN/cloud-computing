@@ -30,10 +30,11 @@ def build_policy_config() -> PolicyConfig:
 
 
 def build_prom_queries() -> PrometheusQueries:
+    # Server-side service latency (queue wait + inference), the SLO metric.
     default_p99_query = (
         "histogram_quantile("
         "0.99,"
-        "sum(rate(inference_duration_seconds_bucket[1m])) by (le)"
+        "sum(rate(dispatcher_request_duration_seconds_bucket[1m])) by (le)"
         ")"
     )
     return PrometheusQueries(

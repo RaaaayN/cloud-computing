@@ -1,15 +1,16 @@
-"""Overlay the 3 experiment runs (custom / HPA70 / HPA90) on two figures.
+"""Overlay the 3 experiment runs (custom / HPA70 / HPA90) on the comparison figures.
 
-Produces the slide-17 time-series comparison:
-    - p99 latency vs time
+Produces the slide-17 time-series comparison (x = time):
+    - server-side p99 latency vs time   (the graded SLO metric)
     - CPU cores vs time
+plus two diagnostics (replica count, dispatcher queue depth).
 
 Usage:
     python experiments/plot.py custom.csv hpa70.csv hpa90.csv
     python experiments/plot.py custom.csv hpa70.csv hpa90.csv --out-prefix figs/run1
 
 Each input CSV is produced by collect.py:
-    timestamp, p99_latency, replica_count, cpu_cores
+    timestamp, p99_latency, replica_count, cpu_cores, queue_depth
 """
 import argparse
 import csv
@@ -44,7 +45,6 @@ def load_series(path: str):
         "label": Path(path).stem,
         "t": elapsed,
         "p99": col("p99_latency"),
-        "e2e_p99": col("e2e_p99"),
         "queue_depth": col("queue_depth"),
         "cpu": col("cpu_cores"),
         "replicas": col("replica_count"),
@@ -79,10 +79,8 @@ def main() -> None:
     series = [load_series(path) for path in args.csv]
     p = args.out_prefix
 
-    # End-to-end client p99 is the real SLO metric (includes queue wait).
-    _save_timeseries(series, "e2e_p99", "end-to-end p99 latency (s)",
-                     "End-to-end client p99 vs time", f"{p}_e2e_p99.png", slo=True)
-    _save_timeseries(series, "p99", "server p99 inference latency (s)",
+    # Graded metric: server-side inference p99 (SLO < 0.5 s).
+    _save_timeseries(series, "p99", "server-side p99 inference latency (s)",
                      "Server-side inference p99 vs time", f"{p}_p99.png", slo=True)
     _save_timeseries(series, "cpu", "CPU cores used (inference pods)",
                      "CPU cores vs time", f"{p}_cpu.png")

@@ -44,17 +44,32 @@ def generate_synthetic_samples(count: int = SYNTHETIC_COUNT) -> list[str]:
     return encoded
 
 
+def load_local_samples(samples_dir: Path) -> list[str]:
+    """Encode any image files already present in samples_dir (jpg/jpeg/png)."""
+    if not samples_dir.is_dir():
+        return []
+    exts = {".jpg", ".jpeg", ".png"}
+    files = sorted(p for p in samples_dir.iterdir() if p.suffix.lower() in exts)
+    return [encode_image_bytes(p.read_bytes()) for p in files]
+
+
 async def fetch_samples(samples_dir: Path | None = None) -> list[str]:
     """Return base64-encoded sample images.
 
-    Tries to download the ImageNet sample set first (cached on disk). If the
-    remote is unavailable (e.g. the upstream repo moved/404s), falls back to
-    locally generated synthetic JPEGs so the load tester always runs offline
-    and inside the cluster.
+    Resolution order:
+      1. Use any images already in `samples/` (drop the official ImageNet samples
+         from github.com/EliSchwartz/imagenet-sample-images here to use them).
+      2. Otherwise try to download the configured ImageNet sample set.
+      3. Otherwise generate synthetic JPEGs (offline, in-cluster safe).
     """
     out = samples_dir or Path("samples")
     out.mkdir(exist_ok=True)
-    encoded: list[str] = []
+
+    encoded = load_local_samples(out)
+    if encoded:
+        print(f"  using {len(encoded)} local sample image(s) from {out}")
+        return encoded
+
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             for name in SAMPLES:
