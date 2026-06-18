@@ -44,6 +44,8 @@ def load_series(path: str):
         "label": Path(path).stem,
         "t": elapsed,
         "p99": col("p99_latency"),
+        "e2e_p99": col("e2e_p99"),
+        "queue_depth": col("queue_depth"),
         "cpu": col("cpu_cores"),
         "replicas": col("replica_count"),
     }
@@ -56,38 +58,38 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _save_timeseries(series, key, ylabel, title, out_path, slo=False):
+    plt.figure(figsize=(10, 5))
+    for s in series:
+        plt.plot(s["t"], s[key], marker=".", label=s["label"])
+    if slo:
+        plt.axhline(SLO_SECONDS, color="red", linestyle="--", label=f"SLO {SLO_SECONDS}s")
+    plt.xlabel("time (s)")
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    print(f"wrote {out_path}")
+
+
 def main() -> None:
     args = parse_args()
     series = [load_series(path) for path in args.csv]
+    p = args.out_prefix
 
-    # Figure 1 — p99 latency vs time
-    plt.figure(figsize=(10, 5))
-    for s in series:
-        plt.plot(s["t"], s["p99"], marker=".", label=s["label"])
-    plt.axhline(SLO_SECONDS, color="red", linestyle="--", label=f"SLO {SLO_SECONDS}s")
-    plt.xlabel("time (s)")
-    plt.ylabel("p99 inference latency (s)")
-    plt.title("p99 latency vs time")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    p99_path = f"{args.out_prefix}_p99.png"
-    plt.tight_layout()
-    plt.savefig(p99_path, dpi=150)
-    print(f"wrote {p99_path}")
-
-    # Figure 2 — CPU cores vs time
-    plt.figure(figsize=(10, 5))
-    for s in series:
-        plt.plot(s["t"], s["cpu"], marker=".", label=s["label"])
-    plt.xlabel("time (s)")
-    plt.ylabel("CPU cores used (inference pods)")
-    plt.title("CPU cores vs time")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    cpu_path = f"{args.out_prefix}_cpu.png"
-    plt.tight_layout()
-    plt.savefig(cpu_path, dpi=150)
-    print(f"wrote {cpu_path}")
+    # End-to-end client p99 is the real SLO metric (includes queue wait).
+    _save_timeseries(series, "e2e_p99", "end-to-end p99 latency (s)",
+                     "End-to-end client p99 vs time", f"{p}_e2e_p99.png", slo=True)
+    _save_timeseries(series, "p99", "server p99 inference latency (s)",
+                     "Server-side inference p99 vs time", f"{p}_p99.png", slo=True)
+    _save_timeseries(series, "cpu", "CPU cores used (inference pods)",
+                     "CPU cores vs time", f"{p}_cpu.png")
+    _save_timeseries(series, "replicas", "inference replicas",
+                     "Replica count vs time", f"{p}_replicas.png")
+    _save_timeseries(series, "queue_depth", "dispatcher queue depth",
+                     "Dispatcher queue depth vs time", f"{p}_queue.png")
 
 
 if __name__ == "__main__":

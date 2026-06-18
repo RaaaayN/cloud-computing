@@ -1,9 +1,14 @@
 """Collect time-series metrics during an autoscaling experiment run.
 
 Records one CSV row every --interval seconds:
-    timestamp, p99_latency, replica_count, cpu_cores
+    timestamp, p99_latency, e2e_p99, queue_depth, arrival_rate, replica_count, cpu_cores
 
-- p99_latency  : server-side inference p99, queried from Prometheus.
+- p99_latency  : server-side inference p99 (inference_duration_seconds).
+- e2e_p99      : end-to-end client p99 (loadtester_request_duration_seconds) — the
+                 real SLO metric; unlike server p99 it includes time spent waiting
+                 in the dispatcher queue, so it exposes the cost of under-scaling.
+- queue_depth  : dispatcher_queue_depth — what the custom autoscaler reacts to.
+- arrival_rate : rate(dispatcher_requests_total[1m]) — load level (same trace for all).
 - replica_count: ready replicas of the inference Deployment, read from the
                  Kubernetes API (the Prometheus config scrapes the Service DNS,
                  so `up{job=...}` cannot count replicas).
@@ -30,6 +35,13 @@ P99_QUERY = (
     "histogram_quantile(0.99, "
     "sum(rate(inference_duration_seconds_bucket[1m])) by (le))"
 )
+# End-to-end client p99 (includes dispatcher queue wait) — the real SLO metric.
+E2E_P99_QUERY = (
+    "histogram_quantile(0.99, "
+    "sum(rate(loadtester_request_duration_seconds_bucket[1m])) by (le))"
+)
+QUEUE_DEPTH_QUERY = "dispatcher_queue_depth"
+ARRIVAL_RATE_QUERY = "rate(dispatcher_requests_total[1m])"
 
 
 def query_prometheus_scalar(prom_url: str, query: str) -> float:
@@ -146,18 +158,27 @@ def main() -> None:
     print(f"Collecting -> {out_path} every {args.interval}s (Ctrl-C to stop)")
     with out_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["timestamp", "p99_latency", "replica_count", "cpu_cores"])
+        writer.writerow([
+            "timestamp", "p99_latency", "e2e_p99", "queue_depth",
+            "arrival_rate", "replica_count", "cpu_cores",
+        ])
         try:
             while True:
                 now = time.time()
                 p99 = query_prometheus_scalar(args.prometheus_url, P99_QUERY)
+                e2e = query_prometheus_scalar(args.prometheus_url, E2E_P99_QUERY)
+                queue = query_prometheus_scalar(args.prometheus_url, QUEUE_DEPTH_QUERY)
+                arrival = query_prometheus_scalar(args.prometheus_url, ARRIVAL_RATE_QUERY)
                 replicas = read_replicas(apps_api, args.namespace, args.deployment)
                 cpu = read_cpu_cores(custom_api, args.namespace, args.selector)
-                writer.writerow([round(now, 3), p99, replicas, cpu])
+                writer.writerow([
+                    round(now, 3), p99, e2e, queue, arrival, replicas, cpu,
+                ])
                 handle.flush()
                 print(
-                    f"t={int(now - start):4d}s "
-                    f"p99={p99:.3f} replicas={replicas:.0f} cpu={cpu:.3f}"
+                    f"t={int(now - start):4d}s p99={p99:.3f} e2e={e2e:.3f} "
+                    f"queue={queue:.1f} arr={arrival:.1f} "
+                    f"replicas={replicas:.0f} cpu={cpu:.3f}"
                 )
                 if args.duration and (now - start) >= args.duration:
                     break
