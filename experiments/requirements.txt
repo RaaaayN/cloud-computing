@@ -1,0 +1,6 @@
+# Tooling for the experiment harness (collect.py / plot.py).
+# Install separately from the service images:
+#   pip install -r experiments/requirements.txt
+requests==2.32.3
+kubernetes==29.0.0
+matplotlib==3.9.2

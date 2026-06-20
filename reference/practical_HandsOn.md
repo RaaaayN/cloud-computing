@@ -106,6 +106,30 @@ print(response.text, round(time.perf_counter() - t, 3))
 
 ### You should see a list of 5 labels predicted by the model as classification of the sample image.
 
+---
+
+## Full stack (beyond this tutorial)
+
+This hands-on covers **inference only**. The complete project adds:
+
+| Component | Port | Doc |
+|-----------|------|-----|
+| Dispatcher (queue + forward) | 8002 | [docs/DISPATCHER.md](docs/DISPATCHER.md) |
+| Load tester | 8003 (metrics) | [docs/LOAD_TESTER.md](docs/LOAD_TESTER.md) |
+| Custom autoscaler | — | [docs/AUTOSCALER.md](docs/AUTOSCALER.md) |
+| Prometheus | 9090 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+
+**Quick local stack:**
+
+```bash
+pip install -r requirements.txt
+python model_server.py                                    # terminal 1
+INFERENCE_URL=http://127.0.0.1:8001 python src/dispatcher/app.py   # terminal 2
+python src/load_tester/run.py --target http://127.0.0.1:8002 --duration 30 --base 1 --peak 5
+```
+
+See [README.md](README.md) for the full guide.
+
 ### Now try to containerize this working application.
 
 ### Please use this tutorial only as a sample and not as a final code for the project.
