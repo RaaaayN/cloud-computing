@@ -10,6 +10,20 @@ the comparison experiment (custom autoscaler vs HPA 70% / 90%).
 
 ---
 
+## TL;DR (scripts)
+
+On Windows PowerShell, the whole flow is wrapped in three scripts:
+
+```powershell
+pwsh ./scripts/install.ps1      # start Minikube, build images, deploy the stack
+pwsh ./scripts/smoke_test.ps1   # verify the chain end-to-end (PASS/FAIL)
+pwsh ./experiments/run_all.ps1  # custom autoscaler vs HPA 70/90, plots the figures
+```
+
+The sections below explain each step manually (and for bash users).
+
+---
+
 ## 0. Prerequisites
 
 - Docker (running) — used to build the service images.
@@ -135,8 +149,9 @@ autoscaler can see latency.
 ## 6. Custom autoscaler
 
 Manifest: `k8s/autoscaler-deployment.yaml` (ServiceAccount + RBAC + Deployment).
-It starts in **dry-run** by default (`args: ["--dry-run"]`): it computes scaling
-decisions and logs them without patching the Deployment.
+It performs **real scaling** by default (`args: []`): it computes scaling
+decisions and patches the inference Deployment. To observe without patching,
+override with `args: ["--dry-run"]` and re-apply.
 
 ```bash
 kubectl apply -f k8s/autoscaler-deployment.yaml
@@ -153,9 +168,8 @@ Key env vars (already set in the manifest):
 - `PROMETHEUS_URL=http://prometheus:9090`
 - `INTERVAL_SEC=15`
 
-To enable real scaling, remove `--dry-run` from the manifest `args` and re-apply.
 The RBAC Role grants `patch` on `deployments/scale`, which is what the controller
-uses.
+uses to apply the scaling decisions.
 
 ---
 
@@ -181,7 +195,7 @@ kubectl -n inference-system port-forward svc/prometheus 9090:9090 &
 (p99 from Prometheus; replicas and CPU from the Kubernetes API / metrics-server,
 because the Prometheus config scrapes the Service DNS and cannot count replicas).
 
-**Run 1 — custom autoscaler** (remove `--dry-run` first):
+**Run 1 — custom autoscaler** (real scaling is the default):
 ```bash
 kubectl -n inference-system delete hpa --all
 kubectl apply -f k8s/autoscaler-deployment.yaml
@@ -228,7 +242,7 @@ python experiments/plot.py custom.csv hpa70.csv hpa90.csv --out-prefix compariso
 - [ ] All pods `Running` / `READY 1/1` in `inference-system`
 - [ ] Prometheus targets **UP** (inference, dispatcher)
 - [ ] p99 PromQL returns a number under load
-- [ ] Autoscaler dry-run logs `MAPE decision` every 15 s
+- [ ] Autoscaler logs `MAPE decision` every 15 s (and patches replicas)
 - [ ] Load tester Job completes without mass errors
 - [ ] 3 runs collected (`custom.csv`, `hpa70.csv`, `hpa90.csv`) and plotted
 
