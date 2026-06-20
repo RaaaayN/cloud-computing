@@ -7,13 +7,19 @@ import httpx
 
 SAMPLE_URL = "https://raw.githubusercontent.com/EliSchwartz/imagenet-sample-images/master/"
 SAMPLES = [
-    "n02085620_60.JPEG",
-    "n02123045_50.JPEG",
-    "n03445777_42.JPEG",
-    "n07873807_8.JPEG",
-    "n02690373_1.JPEG",
+    "n01440764_tench.JPEG",
+    "n01484850_great_white_shark.JPEG",
+    "n02085620_Chihuahua.JPEG",
+    "n02123045_tabby.JPEG",
+    "n02690373_airliner.JPEG",
 ]
 SYNTHETIC_COUNT = 5
+
+# Real ImageNet query images shipped inside the package (from
+# github.com/EliSchwartz/imagenet-sample-images, slide 19). These are baked
+# into the loadtester image, so the in-cluster Job uses real images out of the
+# box instead of falling back to synthetic noise.
+BUNDLED_SAMPLES_DIR = Path(__file__).resolve().parent / "samples"
 
 
 def encode_image_bytes(raw: bytes) -> str:
@@ -57,10 +63,12 @@ async def fetch_samples(samples_dir: Path | None = None) -> list[str]:
     """Return base64-encoded sample images.
 
     Resolution order:
-      1. Use any images already in `samples/` (drop the official ImageNet samples
-         from github.com/EliSchwartz/imagenet-sample-images here to use them).
-      2. Otherwise try to download the configured ImageNet sample set.
-      3. Otherwise generate synthetic JPEGs (offline, in-cluster safe).
+      1. Use any images already in `samples/` (drop your own ImageNet samples
+         from github.com/EliSchwartz/imagenet-sample-images here to override).
+      2. Use the real ImageNet samples bundled in the package (shipped in the
+         loadtester image) — the default in-cluster path.
+      3. Otherwise try to download the configured ImageNet sample set.
+      4. Otherwise generate synthetic JPEGs (offline, in-cluster safe).
     """
     out = samples_dir or Path("samples")
     out.mkdir(exist_ok=True)
@@ -68,6 +76,11 @@ async def fetch_samples(samples_dir: Path | None = None) -> list[str]:
     encoded = load_local_samples(out)
     if encoded:
         print(f"  using {len(encoded)} local sample image(s) from {out}")
+        return encoded
+
+    encoded = load_local_samples(BUNDLED_SAMPLES_DIR)
+    if encoded:
+        print(f"  using {len(encoded)} bundled ImageNet sample image(s)")
         return encoded
 
     try:

@@ -3,6 +3,9 @@ __pycache__/
 .pytest_cache/
 venv/
 samples/
+# but keep the real ImageNet query images bundled with the loadtester package
+!src/load_tester/samples/
+!src/load_tester/samples/*.JPEG
 results.csv
 benchmarks/
 
