@@ -9,7 +9,7 @@
     3. Prometheus has the inference and dispatcher targets UP.
     4. Prometheus is scraping the inference application metrics.
 
-  Use this after scripts\install.ps1 and before experiments\run_all.ps1.
+  Use this after scripts\install.ps1 and before scripts\run_all.ps1.
 
 .USAGE
   pwsh ./scripts/smoke_test.ps1

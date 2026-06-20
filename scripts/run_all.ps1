@@ -13,7 +13,7 @@
 
 .USAGE
   pip install -r experiments/requirements.txt   # once
-  .\experiments\run_all.ps1                      # from the repo root
+  pwsh ./scripts/run_all.ps1                     # from anywhere in the repo
 #>
 param(
   [string]$Namespace    = "inference-system",
@@ -23,6 +23,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ns = $Namespace
+
+# Run from the repo root so all relative paths (k8s/, experiments/) resolve
+# regardless of where the script is invoked from.
+Set-Location (Split-Path -Parent $PSScriptRoot)
 
 function Assert-BaseStack {
   # The runs are meaningless unless inference + dispatcher + prometheus are all up.

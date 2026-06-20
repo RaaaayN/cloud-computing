@@ -39,8 +39,23 @@ if (-not $SkipStart) {
     Write-Host "    Minikube already running." -ForegroundColor DarkGray
   } else {
     Step "Starting Minikube (cpus=$Cpus memory=$Memory driver=$Driver)..."
-    minikube start --cpus=$Cpus --memory=$Memory --driver=$Driver
+    # --wait=all blocks until the apiserver and system components are actually
+    # Ready, instead of returning with a half-started control plane.
+    minikube start --cpus=$Cpus --memory=$Memory --driver=$Driver --wait=all
   }
+
+  # Sanity: the API server must answer before we go further, otherwise every
+  # kubectl below fails with a confusing "connection refused" / EOF.
+  Step "Waiting for the API server to be reachable..."
+  $ready = $false
+  for ($i = 0; $i -lt 30; $i++) {
+    try { kubectl get --raw='/readyz' 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { $ready = $true; break } } catch {}
+    Start-Sleep -Seconds 4
+  }
+  if (-not $ready) {
+    throw "API server not reachable after start. The Minikube profile may be corrupt; run 'minikube delete' and retry."
+  }
+
   Step "Enabling metrics-server addon (required for the HPA)..."
   minikube addons enable metrics-server | Out-Null
 }
@@ -92,4 +107,4 @@ kubectl -n $ns get pods
 Write-Host ""
 Write-Host "Install complete. Next steps:" -ForegroundColor Green
 Write-Host "  pwsh ./scripts/smoke_test.ps1     # verify the chain end-to-end"
-Write-Host "  pwsh ./experiments/run_all.ps1    # run the custom-vs-HPA experiment"
+Write-Host "  pwsh ./scripts/run_all.ps1        # run the custom-vs-HPA experiment"

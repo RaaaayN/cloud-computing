@@ -17,7 +17,7 @@ On Windows PowerShell, the whole flow is wrapped in three scripts:
 ```powershell
 pwsh ./scripts/install.ps1      # start Minikube, build images, deploy the stack
 pwsh ./scripts/smoke_test.ps1   # verify the chain end-to-end (PASS/FAIL)
-pwsh ./experiments/run_all.ps1  # custom autoscaler vs HPA 70/90, plots the figures
+pwsh ./scripts/run_all.ps1      # custom autoscaler vs HPA 70/90, plots the figures
 ```
 
 The sections below explain each step manually (and for bash users).
