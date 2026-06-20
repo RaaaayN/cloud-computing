@@ -12,6 +12,10 @@ benchmarks/
 # experiment outputs
 *.csv
 comparison_*.png
+# but keep the committed campaign results (CSVs + figures) for the report
+!experiments/results/
+!experiments/results/*.csv
+!experiments/results/*.png
 
 # local planning / working-memory files (not part of the repo)
 task_plan.md
