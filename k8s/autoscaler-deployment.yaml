@@ -66,7 +66,9 @@ spec:
             - name: REPLICA_MAX
               value: "10"
             - name: MAX_DELTA_PER_CYCLE
-              value: "1"
+              value: "3"            # drain a burst faster (was 1 -> ~120s to reach 10 replicas)
+            - name: S_WARN
+              value: "0.40"         # react before the 0.5s SLO is breached (was 0.45)
             - name: SERVICE_TIME_SECONDS
               value: "0.2"
 

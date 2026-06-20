@@ -22,8 +22,16 @@ LOADTESTER_REQUEST_DURATION_SECONDS = Histogram(
     "End-to-end client latency in seconds",
     buckets=[0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.0, 5.0],
 )
+LOADTESTER_DROPPED_TOTAL = Counter(
+    "loadtester_dropped_total",
+    "Requests dropped client-side because the in-flight cap was reached",
+)
 
 METRICS_PORT = int(os.getenv("LOADTESTER_METRICS_PORT", "8003"))
+# Cap on concurrent in-flight requests. Without a cap, a burst that saturates the
+# dispatcher queue makes responses pile up, exhausts the httpx connection pool and
+# stalls the scheduling loop -> the load tester stops emitting traffic mid-run.
+MAX_INFLIGHT = int(os.getenv("LOADTESTER_MAX_INFLIGHT", "200"))
 
 
 def target_rps(t: float, dur: float, base: float, peak: float) -> float:
@@ -99,6 +107,7 @@ async def run(
     out: str,
     metrics_port: int,
     workload: str | None = None,
+    max_inflight: int = MAX_INFLIGHT,
 ) -> None:
     trace = load_workload(workload) if workload else None
     if duration <= 0:
@@ -115,9 +124,22 @@ async def run(
             writer = csv.writer(handle)
             writer.writerow(["timestamp", "status", "latency_seconds"])
 
-            async with httpx.AsyncClient() as client:
+            limits = httpx.Limits(
+                max_connections=max_inflight,
+                max_keepalive_connections=max_inflight,
+            )
+            async with httpx.AsyncClient(limits=limits) as client:
                 start = time.perf_counter()
                 tasks: list[asyncio.Task[None]] = []
+                inflight = 0
+
+                async def tracked(image_b64: str) -> None:
+                    nonlocal inflight
+                    try:
+                        await send(client, target, image_b64, writer, csv_lock)
+                    finally:
+                        inflight -= 1
+
                 while True:
                     elapsed = time.perf_counter() - start
                     if elapsed >= duration:
@@ -127,16 +149,23 @@ async def run(
                     else:
                         rps = target_rps(elapsed, duration, base, peak)
                     interval = 1.0 / rps if rps > 0 else 1.0
-                    tasks.append(
-                        asyncio.create_task(
-                            send(client, target, random.choice(images), writer, csv_lock)
+
+                    # When at the in-flight cap, drop client-side (like the
+                    # dispatcher does on a full queue) and keep pacing the
+                    # workload instead of blocking and stalling the run.
+                    if inflight >= max_inflight:
+                        LOADTESTER_DROPPED_TOTAL.inc()
+                    else:
+                        inflight += 1
+                        tasks.append(
+                            asyncio.create_task(tracked(random.choice(images)))
                         )
-                    )
+
                     await asyncio.sleep(interval * random.uniform(0.8, 1.2))
                     if len(tasks) > 500:
                         tasks = [task for task in tasks if not task.done()]
                     if int(elapsed) % 10 == 0 and elapsed - int(elapsed) < 0.1:
-                        print(f"[t={int(elapsed):4d}s] rps={rps:.1f} inflight={len(tasks)}")
+                        print(f"[t={int(elapsed):4d}s] rps={rps:.1f} inflight={inflight}")
                 if tasks:
                     await asyncio.gather(*tasks, return_exceptions=True)
     finally:
@@ -169,6 +198,12 @@ def parse_args() -> argparse.Namespace:
         default=METRICS_PORT,
         help="HTTP port for Prometheus /metrics",
     )
+    parser.add_argument(
+        "--max-inflight",
+        type=int,
+        default=MAX_INFLIGHT,
+        help="Max concurrent in-flight requests before dropping client-side",
+    )
     return parser.parse_args()
 
 
@@ -183,6 +218,7 @@ def main() -> None:
             out=args.out,
             metrics_port=args.metrics_port,
             workload=args.workload,
+            max_inflight=args.max_inflight,
         )
     )
 
