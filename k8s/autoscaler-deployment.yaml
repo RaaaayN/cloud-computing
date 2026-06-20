@@ -48,7 +48,10 @@ spec:
         - name: autoscaler
           image: autoscaler:latest
           imagePullPolicy: IfNotPresent
-          args: ["--dry-run"]
+          # Real scaling is the default. To run the autoscaler in observe-only
+          # mode (compute decisions without patching replicas), override with:
+          #   args: ["--dry-run"]
+          args: []
           env:
             - name: PROMETHEUS_URL
               value: http://prometheus:9090
