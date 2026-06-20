@@ -40,7 +40,8 @@ DISPATCHER_REQUESTS_DROPPED_TOTAL = Counter(
 DISPATCHER_REQUEST_DURATION = Histogram(
     "dispatcher_request_duration_seconds",
     "Server-side query latency: dispatcher receive -> response (queue + inference)",
-    buckets=[0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.0, 5.0],
+    # Top buckets (10, 30) so a saturated-queue p99 is measured, not clamped at 5s.
+    buckets=[0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.0, 5.0, 10.0, 30.0],
 )
 
 

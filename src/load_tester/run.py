@@ -20,7 +20,7 @@ LOADTESTER_REQUESTS_TOTAL = Counter(
 LOADTESTER_REQUEST_DURATION_SECONDS = Histogram(
     "loadtester_request_duration_seconds",
     "End-to-end client latency in seconds",
-    buckets=[0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.0, 5.0],
+    buckets=[0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.0, 5.0, 10.0, 30.0],
 )
 LOADTESTER_DROPPED_TOTAL = Counter(
     "loadtester_dropped_total",

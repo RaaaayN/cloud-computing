@@ -37,7 +37,7 @@ INFERENCE_REQUESTS_TOTAL = Counter(
 INFERENCE_DURATION_SECONDS = Histogram(
     "inference_duration_seconds",
     "Server-side inference latency in seconds",
-    buckets=[0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.0],
+    buckets=[0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.0, 5.0, 10.0, 30.0],
 )
 
 
