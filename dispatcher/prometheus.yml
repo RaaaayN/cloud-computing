@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: "dispatcher"
+    static_configs:
+      - targets: ["localhost:8000"]
+
+  - job_name: "inference_service"
+    static_configs:
+      - targets: ["localhost:8001"]

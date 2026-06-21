@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# virtual env
+ml_pipe/
+.venv/
+
+# OS and editor junk
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# logs and temp files
+*.log
+temp/

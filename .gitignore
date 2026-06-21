@@ -1,0 +1,18 @@
+# Ignore .history folders
+.history/
+*/.history/
+
+# Ignore .venv folders
+.venv/
+*/.venv/
+*/ml_pipe/
+*/venv_disp/
+
+# Ignore __pycache__ folders
+__pycache__/
+*/__pycache__/
+
+# Ignore ml_pipe folders in subdirectories
+*/ml_pipe/
+
+legacy/

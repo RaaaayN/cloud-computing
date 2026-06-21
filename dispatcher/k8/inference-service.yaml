@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: tu-cloud-project
+  labels:
+    app: resnet-infer
+spec:
+  selector:
+    app: resnet-infer
+  ports:
+    - name: http
+      port: 80
+      targetPort: 6001
+    - name: metrics
+      port: 8001
+      targetPort: 8001
+  type: NodePort  # You can change to LoadBalancer or ClusterIP if needed

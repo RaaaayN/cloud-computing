@@ -1,0 +1,4 @@
+run,p99_max,p99_med,reps_max,cpu_max,drop_pct_overall
+custom,10.0,10.0,10,1.81,98.0
+hpa70,10.0,10.0,10,1.81,98.3
+hpa90,10.0,10.0,7,1.53,98.7

@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tu-cloud-project
+  labels:
+    app: resnet-infer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: resnet-infer
+  template:
+    metadata:
+      labels:
+        app: resnet-infer
+    spec:
+      containers:
+        - name: resnet-infer
+          image: resnet-infer  # Replace with your Docker Hub image if not using Minikube
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 6001  # Flask API
+            - containerPort: 8001  # Prometheus metrics
+          resources:
+            requests:
+              cpu: "1"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
