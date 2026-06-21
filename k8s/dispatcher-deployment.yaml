@@ -24,8 +24,12 @@ spec:
           ports:
             - containerPort: 8002
           env:
+            # Short queue: bound the worst-case server-side wait
+            # (wait <= queue/(replicas*serviceRate)) so p99 stays under the 0.5s
+            # SLO, and shed the overflow as 503. A long queue (100) just lets the
+            # backlog -- and p99 -- grow without bound under a burst.
             - name: DISPATCHER_QUEUE_MAX_SIZE
-              value: "100"
+              value: "3"
           readinessProbe:
             httpGet:
               path: /healthz

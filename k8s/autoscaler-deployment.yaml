@@ -64,7 +64,13 @@ spec:
             - name: REPLICA_MIN
               value: "1"
             - name: REPLICA_MAX
-              value: "10"
+              value: "5"             # cap low on purpose: running ~10 concurrent
+                                     # ResNet18 inferences (each capped at 1 core)
+                                     # causes memory/scheduler contention that makes
+                                     # every inference slower -> higher p99 AND more
+                                     # cores. Few replicas stay uncontended (fast),
+                                     # use fewer cores, and the short dispatcher queue
+                                     # sheds the overflow instead of inflating latency.
             - name: MAX_DELTA_PER_CYCLE
               value: "3"            # drain a burst faster (was 1 -> ~120s to reach 10 replicas)
             - name: S_WARN

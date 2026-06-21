@@ -11,6 +11,12 @@ RUN pip install --no-cache-dir \
 RUN pip install --no-cache-dir \
       aiohttp==3.9.5 prometheus_client==0.20.0 numpy pillow
 
+# Bake the ResNet18 weights into the image so a fresh pod starts in ~2s instead of
+# downloading ~45 MB from download.pytorch.org on every startup (which serialises
+# into a ~90s cold start when several replicas come up at once).
+ENV TORCH_HOME=/app/.torch
+RUN python -c "from torchvision.models import ResNet18_Weights, resnet18; resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)"
+
 COPY model_server.py .
 
 EXPOSE 8001
