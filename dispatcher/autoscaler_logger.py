@@ -37,9 +37,9 @@ def query_prometheus(promql):
 def compute_target_replicas(p99_latency, queue_size, current_replicas):
     if p99_latency is None or queue_size is None:
         return current_replicas
-    if p99_latency > 0.005 or queue_size > 10:
+    if p99_latency > 0.40 or queue_size > 2:
         return min(current_replicas + 1, MAX_REPLICAS)
-    elif p99_latency < 0.2 and queue_size < 3:
+    elif p99_latency < 0.30 and queue_size < 1:
         return max(current_replicas - 1, MIN_REPLICAS)
     return current_replicas
 
@@ -139,7 +139,7 @@ while True:
     try:
         # Use histogram_quantile instead of quantile_over_time
         p99_latency = query_prometheus(
-            "histogram_quantile(0.99, rate(inference_latency_seconds_bucket[1m]))"
+            "histogram_quantile(0.99, sum(rate(dispatcher_request_duration_seconds_bucket[1m])) by (le))"
         )
         queue_size = query_prometheus("dispatcher_queue_size")
         current_replicas = get_current_replicas()
