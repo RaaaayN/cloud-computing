@@ -23,6 +23,20 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8001
+          env:
+            # With a cgroup CPU limit of 1, torch.set_num_threads(1) does NOT
+            # reliably constrain OpenMP/MKL/OpenBLAS, which spawn one thread per
+            # visible node core; they then fight for the single allowed core,
+            # CFS-throttle the pod, and inference balloons under load. Pin every
+            # math backend to 1 thread.
+            - name: OMP_NUM_THREADS
+              value: "1"
+            - name: MKL_NUM_THREADS
+              value: "1"
+            - name: OPENBLAS_NUM_THREADS
+              value: "1"
+            - name: NUMEXPR_NUM_THREADS
+              value: "1"
           resources:
             requests:
               cpu: "1"
@@ -34,16 +48,22 @@ spec:
             httpGet:
               path: /readyz
               port: 8001
-            initialDelaySeconds: 3
-            periodSeconds: 5
+            # Tight cadence so a warmed pod joins the dispatcher pool fast during a
+            # burst (warmup ~2s; the dispatcher refreshes its replica set every 2s).
+            initialDelaySeconds: 2
+            periodSeconds: 2
+          # Liveness must catch a dead process, NOT a slow one. Under burst load
+          # the single CPU core is saturated by inference, the event loop is
+          # starved, and /healthz answers late; a tight probe then kills busy
+          # replicas mid-burst (Exit 137), dropping in-flight queries and capacity.
           livenessProbe:
             httpGet:
               path: /healthz
               port: 8001
             initialDelaySeconds: 10
-            periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 6
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 12
 ---
 apiVersion: v1
 kind: Service
@@ -58,4 +78,20 @@ spec:
       port: 8001
       targetPort: 8001
   type: ClusterIP
+---
+# Headless Service: DNS resolves to every ready inference pod IP, so the
+# dispatcher can address pods directly (one in-flight request per pod).
+apiVersion: v1
+kind: Service
+metadata:
+  name: inference-headless
+  namespace: inference-system
+spec:
+  clusterIP: None
+  selector:
+    app: inference
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
 

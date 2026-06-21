@@ -42,6 +42,13 @@ REPLICAS_QUERY = 'sum(up{job="inference"})'
 CPU_QUERY = 'sum(rate(process_cpu_seconds_total{job="inference"}[1m]))'
 # Diagnostic: what the custom autoscaler reacts to.
 QUEUE_DEPTH_QUERY = "dispatcher_queue_depth"
+# Availability: fraction of requests shed (503) right now. rate() so it is per-run
+# meaningful even though the dispatcher counter is cumulative across runs. This is
+# a third comparison axis: the custom serves load instead of dropping it.
+DROP_FRACTION_QUERY = (
+    "sum(rate(dispatcher_requests_dropped_total[1m])) "
+    "/ clamp_min(sum(rate(dispatcher_requests_total[1m])), 0.001)"
+)
 
 
 def query_prometheus_scalar(prom_url: str, query: str) -> float:
@@ -91,7 +98,8 @@ def main() -> None:
     with out_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(
-            ["timestamp", "p99_latency", "replica_count", "cpu_cores", "queue_depth"]
+            ["timestamp", "p99_latency", "replica_count", "cpu_cores", "queue_depth",
+             "drop_fraction"]
         )
         try:
             while True:
@@ -100,11 +108,13 @@ def main() -> None:
                 replicas = query_prometheus_scalar(args.prometheus_url, REPLICAS_QUERY)
                 cpu = query_prometheus_scalar(args.prometheus_url, CPU_QUERY)
                 queue = query_prometheus_scalar(args.prometheus_url, QUEUE_DEPTH_QUERY)
-                writer.writerow([round(now, 3), p99, replicas, cpu, queue])
+                drop = query_prometheus_scalar(args.prometheus_url, DROP_FRACTION_QUERY)
+                writer.writerow([round(now, 3), p99, replicas, cpu, queue, drop])
                 handle.flush()
                 print(
                     f"t={int(now - start):4d}s p99={p99:.3f} "
-                    f"replicas={replicas:.0f} cpu={cpu:.3f} queue={queue:.1f}"
+                    f"replicas={replicas:.0f} cpu={cpu:.3f} queue={queue:.1f} "
+                    f"drop={drop:.2f}"
                 )
                 if args.duration and (now - start) >= args.duration:
                     break

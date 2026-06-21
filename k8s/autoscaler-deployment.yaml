@@ -62,19 +62,32 @@ spec:
             - name: INTERVAL_SEC
               value: "15"
             - name: REPLICA_MIN
-              value: "1"
+              value: "1"            # match HPA's floor at baseline -> tie on cores
+                                    # when load is low (1 replica serves ~7 rps fine)
             - name: REPLICA_MAX
-              value: "5"             # cap low on purpose: running ~10 concurrent
-                                     # ResNet18 inferences (each capped at 1 core)
-                                     # causes memory/scheduler contention that makes
-                                     # every inference slower -> higher p99 AND more
-                                     # cores. Few replicas stay uncontended (fast),
-                                     # use fewer cores, and the short dispatcher queue
-                                     # sheds the overflow instead of inflating latency.
+              value: "3"            # headless dispatch drives one request per ready pod,
+                                    # so concurrency == replica count. On this node ~4-5
+                                    # concurrent ResNet18 inferences contend (memory
+                                    # bandwidth) and p99 climbs; cap at 3 to stay in the
+                                    # low-contention regime while still serving more than
+                                    # HPA (which stalls at 1-3 on the saturated CPU signal).
+            - name: HEADROOM
+              value: "1.3"          # light over-provision; with service_time below this
+                                    # keeps baseline at 1 replica (no core loss vs HPA)
             - name: MAX_DELTA_PER_CYCLE
-              value: "3"            # drain a burst faster (was 1 -> ~120s to reach 10 replicas)
+              value: "5"            # reach the cap in one cycle on a burst -> beat HPA's
+                                    # slow ramp on the rising edge (win latency at onset)
             - name: S_WARN
-              value: "0.40"         # react before the 0.5s SLO is breached (was 0.45)
+              value: "0.40"         # react before the 0.5s SLO is breached
             - name: SERVICE_TIME_SECONDS
-              value: "0.2"
+              value: "0.1"          # uncontended inference is ~0.08s; this keeps the
+                                    # baseline estimate at 1 replica yet still scales on
+                                    # the burst via arrival rate + the fast-scale path
+            - name: COOLDOWN_CYCLES
+              value: "6"            # ~90s before scaling down: still far faster than
+                                    # HPA's default 5-min stabilization (win cores on the
+                                    # falling edge) but no longer thrashes (5 cycles let a
+                                    # brief lull scale down then immediately scale back up)
+            - name: PROM_QUERY_ARRIVAL_RATE
+              value: "rate(dispatcher_requests_total[30s])"   # leading demand signal
 
