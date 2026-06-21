@@ -2,6 +2,9 @@
 
 This document describes the **implemented** architecture of the *Elastic ML Inference Serving* project: request flow, metrics, and scaling loop.
 
+> 📄 The complete design, parameter rationale and results are in
+> [`experiments/results/REPORT.md`](../experiments/results/REPORT.md).
+
 ---
 
 ## 1. Overview
@@ -65,18 +68,16 @@ All services use the same image payload format:
 
 ### 3.1 Inference (`model_server.py`)
 
-- **ResNet18** model preloaded at startup.
-- `torch.set_num_threads(1)` — aligned with 1 CPU core/pod quota.
+- **ResNet18** model, weights **baked into the image** (fast startup).
+- Threads pinned to 1 (`torch.set_num_threads(1)` + `OMP/MKL/OpenBLAS/NumExpr=1`) so a pod cannot oversubscribe its 1-CPU quota.
 - **Sequential** processing: one inference at a time per pod (no internal pool).
 - Metrics: `inference_requests_total`, `inference_duration_seconds`.
 
 ### 3.2 Dispatcher (`src/dispatcher/app.py`)
 
-- **Bounded queue** (`asyncio.Queue`, configurable size).
-- **Async workers** (`DISPATCHER_WORKER_COUNT`, default 4): each worker handles one request at a time.
-- **Synchronous forwarding**: the `/submit` handler waits for the inference response before replying to the client → measurable E2E latency.
-- **503** when the queue is full.
-- Implicit load balancing via the K8s `inference` Service (kube-proxy round-robin).
+- **Short bounded queue** (`asyncio.Queue`, size 3); **503** when full (load shedding).
+- **Headless per-pod dispatch**: forwards to ready pod IPs directly, **one in-flight request per pod** (not the ClusterIP Service, whose random LB piles requests onto one pod). Worker pool `DISPATCHER_WORKER_COUNT=20`; effective concurrency = ready replicas.
+- The `/submit` handler waits for the inference response → measures **server-side** latency (`dispatcher_request_duration_seconds`).
 
 See [DISPATCHER.md](DISPATCHER.md).
 
@@ -93,8 +94,8 @@ See [LOAD_TESTER.md](LOAD_TESTER.md).
 ### 3.4 Autoscaler (`src/autoscaler/`)
 
 - **MAPE** loop every **15 s**.
-- Reads Prometheus: `dispatcher_queue_depth`, p99 `inference_duration_seconds`, `rate(dispatcher_requests_total[1m])`.
-- **Queue + SLO** policy (`QueueSloPolicy`): fast scale-up after 2 pressure cycles, scale-down with cooldown.
+- Reads Prometheus: `dispatcher_queue_depth`, server-side p99 `dispatcher_request_duration_seconds`, `rate(dispatcher_requests_total[30s])`.
+- **Queue + SLO** policy (`QueueSloPolicy`): fast scale-up after 2 pressure cycles, scale-down with cooldown. `min/max = 1/3`.
 - Patches `Deployment/inference` via the Kubernetes client (dedicated RBAC).
 - `--dry-run` mode: log decisions without patching (K8s manifest default).
 
@@ -122,31 +123,28 @@ See [AUTOSCALER.md](AUTOSCALER.md).
 | `dispatcher_requests_completed_total` | Counter | Throughput |
 | `dispatcher_requests_dropped_total` | Counter | Overload (503) |
 
-### Inference (server SLO)
+### Server-side SLO (graded)
 
 | Metric | Type | Use |
 |--------|------|-----|
-| `inference_duration_seconds` | Histogram | p99 vs 0.5 s SLO |
-| `inference_requests_total` | Counter | Volume |
+| `dispatcher_request_duration_seconds` | Histogram | **p99 vs 0.5 s SLO** (queue wait + inference) |
+| `inference_duration_seconds` | Histogram | Inference time alone (diagnostic) |
 
-### Load tester (client SLO / reports)
+### Load tester (client-side, reports)
 
 | Metric | Type | Use |
 |--------|------|-----|
-| `loadtester_request_duration_seconds` | Histogram | p99 including queue wait |
+| `loadtester_request_duration_seconds` | Histogram | client p99 |
 | `loadtester_requests_total{status}` | Counter | Success/error rate |
 
 **Reference PromQL:**
 
 ```promql
-# Server p99 latency
-histogram_quantile(0.99, sum(rate(inference_duration_seconds_bucket[1m])) by (le))
+# Server-side p99 latency (the graded SLO metric)
+histogram_quantile(0.99, sum(rate(dispatcher_request_duration_seconds_bucket[1m])) by (le))
 
-# Client p99 latency
-histogram_quantile(0.99, sum(rate(loadtester_request_duration_seconds_bucket[1m])) by (le))
-
-# Arrival rate
-rate(dispatcher_requests_total[1m])
+# Arrival rate (leading demand signal)
+rate(dispatcher_requests_total[30s])
 ```
 
 ---
@@ -156,10 +154,10 @@ rate(dispatcher_requests_total[1m])
 | Principle | Rationale |
 |-----------|-----------|
 | Single queue at dispatcher | Only observable backlog point; matches the brief |
-| No queue inside inference pods | Otherwise `queue_depth` no longer reflects real congestion |
+| One in-flight request per pod (headless) | Enforces "replicas do not queue, one inference at a time" (slide 21) |
 | 15 s decision interval | Fair comparison with HPA |
-| ±1 replica per cycle | Anti-thrashing |
-| Scale-down hysteresis | 4 stable cycles before reduction (configurable) |
+| Bounded delta per cycle (5) | Reach the cap in one cycle on a burst, still bounded |
+| Scale-down hysteresis | 6 stable cycles (~90 s), ≪ HPA's 5-min default |
 
 ---
 

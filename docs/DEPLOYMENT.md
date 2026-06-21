@@ -35,10 +35,15 @@ The sections below explain each step manually (and for bash users).
 ## 1. Start the cluster
 
 ```bash
-minikube start --cpus=4 --memory=6g --driver=docker
+minikube start --cpus=16 --memory=14g --driver=docker
 minikube addons enable metrics-server   # REQUIRED for the HPA (else it shows <unknown>)
 kubectl get nodes                        # should be Ready
 ```
+
+> The node should be sized generously (here 16 CPUs of an 18-core laptop). The
+> autoscaler caps inference at 3 replicas, but the comparison must run all three
+> autoscalers on the **same** cluster. See REPORT.md §7 for why throughput is
+> memory-bandwidth-bound regardless of node size.
 
 ---
 
@@ -137,12 +142,12 @@ Open `http://localhost:9090/targets` — `inference`, `dispatcher`, `loadtester`
 should be **UP**. In the *Graph* tab run the p99 query:
 
 ```promql
-histogram_quantile(0.99, sum(rate(inference_duration_seconds_bucket[1m])) by (le))
+histogram_quantile(0.99, sum(rate(dispatcher_request_duration_seconds_bucket[1m])) by (le))
 ```
 
-It must return a numeric value (not "no data") once traffic is flowing. This
-proves the inference `/metrics` endpoint is scraped correctly and that the
-autoscaler can see latency.
+It must return a numeric value (not "no data") once traffic is flowing. This is the
+graded server-side SLO metric (queue wait + inference) and the signal the autoscaler
+reacts to.
 
 ---
 
@@ -191,9 +196,9 @@ pip install -r experiments/requirements.txt
 kubectl -n inference-system port-forward svc/prometheus 9090:9090 &
 ```
 
-`collect.py` samples `timestamp, p99_latency, replica_count, cpu_cores` every 15 s
-(p99 from Prometheus; replicas and CPU from the Kubernetes API / metrics-server,
-because the Prometheus config scrapes the Service DNS and cannot count replicas).
+`collect.py` samples `timestamp, p99_latency, replica_count, cpu_cores, queue_depth,
+drop_fraction` every 15 s — all from Prometheus (per-pod scraping counts replicas
+and sums CPU). `drop_fraction` is the availability axis (custom sheds less than HPA).
 
 **Run 1 — custom autoscaler** (real scaling is the default):
 ```bash

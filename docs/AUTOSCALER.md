@@ -1,10 +1,15 @@
 # Custom Autoscaler — Implementation Documentation
 
-Autonomous controller that adjusts inference replica count **every 15 seconds** based on **p99 latency** and **queue depth** — not CPU alone.
+Autonomous controller that adjusts inference replica count **every 15 seconds** based on **queue depth, arrival rate and p99 latency** — not CPU (which saturates at the 1-core cap and is uninformative here).
 
-**Primary SLO:** server-side p99 latency **< 0.5 s**.
+**Primary SLO:** server-side p99 latency **< 0.5 s** (`dispatcher_request_duration_seconds` = queue wait + inference).
 
 **Baseline:** Kubernetes HPA with CPU targets of **70%** and **90%**.
+
+> 📄 The authoritative design, parameter rationale and **results** (custom vs HPA,
+> hardware-limit analysis) are in
+> [`experiments/results/REPORT.md`](../experiments/results/REPORT.md). This file is
+> the component reference; deployed parameter values below match the manifests.
 
 ---
 
@@ -31,8 +36,8 @@ flowchart LR
 | **Single queue (dispatcher)** | Brief requires **one request at a time** per replica; congestion must be observable at the dispatcher. |
 | **No internal queue in pods** | Otherwise `queue_depth` no longer reflects true backlog. |
 | **15 s decision interval** | Aligns with HPA cadence; fair comparison. |
-| **Max ±1 replica per cycle** | Limits thrashing. |
-| **Slow scale-down (hysteresis)** | 4 stable cycles before reducing (configurable). |
+| **Bounded delta per cycle** | `MAX_DELTA_PER_CYCLE=5` reaches the cap in one cycle on a burst while staying bounded. |
+| **Scale-down hysteresis** | 6 stable cycles (~90 s) before reducing — far faster than HPA's 5-min default. |
 
 ### 1.3 Hardware assumptions
 
@@ -124,8 +129,9 @@ INTERVAL_SEC = 15
 DEPLOYMENT = "inference"
 NAMESPACE = "inference-system"
 REPLICA_MIN = 1
-REPLICA_MAX = 10
-MAX_DELTA_PER_CYCLE = 1
+REPLICA_MAX = 3       # capped low: >~3 concurrent inferences saturate memory
+                      # bandwidth and raise p99 (see REPORT.md §7)
+MAX_DELTA_PER_CYCLE = 5   # reach the cap in one cycle on a burst
 ```
 
 | Phase | Action |
@@ -139,15 +145,16 @@ MAX_DELTA_PER_CYCLE = 1
 
 **File:** `src/autoscaler/policies/queue_slo_policy.py`
 
-| Parameter | Default | Role |
+| Parameter | Deployed value | Role |
 |-----------|---------|------|
 | `SLO` | 0.5 s | Target latency |
-| `S_warn` | 0.45 s | Alert threshold |
+| `S_warn` | 0.40 s | Alert threshold (fast scale-up) |
 | `S_safe` | 0.35 s | Scale-down threshold |
 | `queue_threshold` (α) | 3.0 | Queue pressure threshold |
-| `headroom` | 1.2 | Capacity margin |
+| `service_time` (S̄) | 0.1 s | Uncontended inference estimate (keeps baseline lean) |
+| `headroom` | 1.3 | Capacity margin |
 | `drain_target` | 10 s | Target backlog drain time |
-| `cooldown_cycles` | 4 | Stable cycles before scale-down |
+| `cooldown_cycles` | 6 (~90 s) | Stable cycles before scale-down (≪ HPA's 5-min default) |
 
 **Capacity formula (Little's Law):**
 
@@ -159,9 +166,9 @@ N_raw   = clamp(min, max, max(N_base, N_queue))
 
 **Decision rules:**
 
-1. **Fast scale-up** if `p99 > S_warn` or `queue > α` for **2 consecutive cycles** → `N + 1`.
-2. **Capacity scale-up** if `N_raw > N_current` → `N + 1` (max delta).
-3. **Scale-down** if queue = 0, p99 < safe, `N_raw < N_current`, for `cooldown_cycles` → `N - 1`.
+1. **Fast scale-up** if `p99 > S_warn` or `queue > α` for **2 consecutive cycles** → `N + MAX_DELTA` (up to MAX).
+2. **Capacity scale-up** if `N_raw > N_current` → up to `N + MAX_DELTA`.
+3. **Scale-down** if queue = 0, p99 < safe, `N_raw < N_current`, for `cooldown_cycles` → `N - MAX_DELTA` (down to MIN).
 4. **Hold** otherwise.
 
 **Why better than HPA?** HPA uses `ceil(currentReplicas × CPU / targetCPU)` and does not see queue or latency. During bursts, the queue grows before average CPU exceeds 70%.
@@ -185,20 +192,14 @@ cd src && python -m autoscaler.controller --dry-run
 # Queue depth
 dispatcher_queue_depth
 
-# Server p99 latency (1m window)
+# Server-side p99 latency (queue wait + inference) -- the graded SLO metric
 histogram_quantile(
   0.99,
-  sum(rate(inference_duration_seconds_bucket[1m])) by (le)
+  sum(rate(dispatcher_request_duration_seconds_bucket[1m])) by (le)
 )
 
-# Client p99 latency (load tester)
-histogram_quantile(
-  0.99,
-  sum(rate(loadtester_request_duration_seconds_bucket[1m])) by (le)
-)
-
-# Arrival rate
-rate(dispatcher_requests_total[1m])
+# Arrival rate (leading demand signal, 30s window)
+rate(dispatcher_requests_total[30s])
 ```
 
 Configurable via env: `PROM_QUERY_QUEUE_DEPTH`, `PROM_QUERY_P99_LATENCY`, `PROM_QUERY_ARRIVAL_RATE`.
@@ -217,12 +218,15 @@ Configurable via env: `PROM_QUERY_QUEUE_DEPTH`, `PROM_QUERY_P99_LATENCY`, `PROM_
 | One active autoscaler | Disable HPA during custom run (and vice versa) |
 | Same min/max replicas | e.g. 1–10 |
 
-### 6.2 Expected analysis
+### 6.2 Measured outcome (see REPORT.md for the full analysis)
 
-- % time p99 < 0.5 s.
-- Total **core-seconds** (cost efficiency).
-- HPA lag during load increases (queue rises before CPU).
-- HPA over-provisioning at 70% vs under-performance at 90%.
+- The custom autoscaler wins on **availability** (drops 7.7 % vs HPA 11–12 %),
+  **demand tracking** (1→3→1 vs HPA flat) and **responsiveness** (leading signal
+  up, ~90 s down vs HPA's 5 min).
+- It does **not** beat HPA on peak p99: on this node scaling does not add throughput
+  (memory-bandwidth wall), so no autoscaler holds < 0.5 s at the sustained peak.
+- Run-to-run p99 variance is large; the drops/tracking advantages are the stable
+  ones. Details and figures: `experiments/results/REPORT.md`.
 
 ---
 
@@ -250,14 +254,15 @@ python -m pytest tests/ -v
 | `DEPLOYMENT_NAME` | `inference` | Target Deployment |
 | `DEPLOYMENT_NAMESPACE` | `default` | Namespace (`inference-system` in K8s) |
 | `INTERVAL_SEC` | `15` | MAPE interval |
-| `REPLICA_MIN` / `REPLICA_MAX` | `1` / `10` | Replica bounds |
-| `MAX_DELTA_PER_CYCLE` | `1` | Max change per cycle |
-| `SERVICE_TIME_SECONDS` | `0.2` | Estimated S̄ |
-| `S_WARN` / `S_SAFE` | `0.45` / `0.35` | Latency thresholds |
+| `REPLICA_MIN` / `REPLICA_MAX` | `1` / `3` | Replica bounds (max capped low: memory-bandwidth wall) |
+| `MAX_DELTA_PER_CYCLE` | `5` | Max change per cycle (reach cap in one cycle) |
+| `SERVICE_TIME_SECONDS` | `0.1` | Estimated S̄ (uncontended) |
+| `S_WARN` / `S_SAFE` | `0.40` / `0.35` | Latency thresholds |
 | `QUEUE_THRESHOLD` | `3.0` | Queue threshold α |
-| `HEADROOM` | `1.2` | Capacity headroom |
+| `HEADROOM` | `1.3` | Capacity headroom |
 | `DRAIN_TARGET_SECONDS` | `10.0` | Backlog drain target |
-| `COOLDOWN_CYCLES` | `4` | Cycles before scale-down |
+| `COOLDOWN_CYCLES` | `6` | Cycles before scale-down (~90 s) |
+| `PROM_QUERY_ARRIVAL_RATE` | `rate(dispatcher_requests_total[30s])` | Leading demand signal |
 
 ---
 

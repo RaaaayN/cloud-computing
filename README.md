@@ -2,7 +2,9 @@
 
 Kubernetes-based **elastic ML serving** project: ResNet18 image classification (CPU-only), centralized queue, Prometheus monitoring, load tester, and a custom autoscaler driven by latency and queue depth (15 s MAPE loop).
 
-**Primary SLO:** server-side p99 latency **< 0.5 s**.
+**Primary SLO:** server-side p99 latency **< 0.5 s**, measured as `dispatcher_request_duration_seconds` (queue wait + inference).
+
+> 📄 **Authoritative design & results:** [`experiments/results/REPORT.md`](experiments/results/REPORT.md) is the complete write-up (architecture, autoscaler design + parameter rationale, the custom-vs-HPA comparison, and the hardware-limit analysis). The other docs are component references; where they disagree, REPORT.md is current.
 
 ---
 
@@ -22,10 +24,10 @@ flowchart LR
 
 | Component | Port | Role |
 |-----------|------|------|
-| Inference (`model_server.py`) | 8001 | ResNet18, 1 request per pod at a time |
-| Dispatcher (`src/dispatcher/app.py`) | 8002 | Bounded queue + synchronous forwarding |
+| Inference (`model_server.py`) | 8001 | ResNet18, CPU, threads pinned to 1, weights baked in, 1 request per pod at a time |
+| Dispatcher (`src/dispatcher/app.py`) | 8002 | Bounded queue (3) + **headless per-pod dispatch** (one in-flight per pod), 503 shedding |
 | Load tester (`src/load_tester/run.py`) | 8003 (metrics) | Triangle load profile + CSV export |
-| Autoscaler (`src/autoscaler/controller.py`) | — | MAPE loop every 15 s |
+| Autoscaler (`src/autoscaler/controller.py`) | — | MAPE loop every 15 s on queue + arrival + p99 (min/max = 1/3) |
 | Prometheus | 9090 | 15 s scrape interval |
 
 ---
@@ -159,6 +161,7 @@ python -m pytest tests/ -v
 
 | Document | Content |
 |----------|---------|
+| [experiments/results/REPORT.md](experiments/results/REPORT.md) | **Authoritative**: full design, parameter rationale, results, hardware-limit analysis |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System overview, data flow, metrics |
 | [docs/DISPATCHER.md](docs/DISPATCHER.md) | API, queue, workers, env vars |
 | [docs/LOAD_TESTER.md](docs/LOAD_TESTER.md) | Triangle profile, CLI, Prometheus, K8s Job |
@@ -177,7 +180,7 @@ python -m pytest tests/ -v
 | Dispatcher synchronous forwarding | Implemented |
 | Load tester (merged from `load-tester` branch) | Implemented |
 | Prometheus scrape (inference, dispatcher, loadtester) | Implemented |
-| Autoscaler MAPE + Queue+SLO policy | Implemented (dry-run default in K8s) |
+| Autoscaler MAPE + Queue+SLO policy | Implemented (real scaling by default; `--dry-run` optional) |
 | Container images (inference / dispatcher / autoscaler / loadtester) | Implemented (`docker/Dockerfile.*`) |
 | HPA 70% / 90% baselines | Implemented (`k8s/hpa-70.yaml`, `k8s/hpa-90.yaml`) |
 | `workload.txt` bursty trace | Implemented (`--workload` replay; trace shipped in the loadtester image) |
