@@ -6,9 +6,15 @@ import threading
 import time
 import base64
 import requests
+import os
 
 app = Flask(__name__)
-r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+r = redis.Redis(host=REDIS_HOST, port=6379, decode_responses=False)
+REPLICA_HOST = os.getenv("REPLICA_HOST", "localhost")
+REPLICA_PORT = os.getenv("REPLICA_PORT", "80")
+replica_urls = [f"http://{REPLICA_HOST}:{REPLICA_PORT}/"]
+MAX_WAIT_TIME = 10
 
 # Prometheus metrics
 requests_received = Counter(
@@ -21,9 +27,7 @@ queue_size = Gauge("dispatcher_queue_size", "Current Redis queue size")
 
 # Config
 QUEUE_NAME = 'inference_queue'
-MAX_WAIT_TIME = 0.5  # seconds
 FORWARD_INTERVAL = 0.05  # 50ms
-replica_urls = ["http://localhost:6001/"]
 replica_index = 0
 
 

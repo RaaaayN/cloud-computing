@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dispatcher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dispatcher
+  template:
+    metadata:
+      labels:
+        app: dispatcher
+    spec:
+      containers:
+        - name: dispatcher
+          image: dispatcher
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5001
+            - containerPort: 8000
+          env:
+            - name: REPLICA_HOST
+              value: "tu-cloud-project"
+            - name: REPLICA_PORT
+              value: "80"
+            - name: REDIS_HOST
+              value: "redis-service"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dispatcher-service
+spec:
+  selector:
+    app: dispatcher
+  ports:
+    - name: http
+      port: 5001
+      targetPort: 5001
+    - name: metrics
+      port: 8000
+      targetPort: 8000
+  type: NodePort

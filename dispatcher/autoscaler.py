@@ -28,16 +28,19 @@ def query_prometheus(promql):
 
 # === Scaling Logic ===
 
-
 def compute_target_replicas(p99_latency, queue_size, current_replicas):
-    if p99_latency is None or queue_size is None:
-        return current_replicas
-
-    # Simple scaling logic
-    if p99_latency > 0.5 or queue_size > 10:
+    if queue_size is None:
+        queue_size = 0
+    if queue_size > 200:
+        return min(current_replicas + 3, MAX_REPLICAS)
+    if queue_size > 50:
+        return min(current_replicas + 2, MAX_REPLICAS)
+    if queue_size > 10 or (p99_latency is not None and p99_latency > 0.4):
         return min(current_replicas + 1, MAX_REPLICAS)
-    elif p99_latency < 0.2 and queue_size < 3:
-        return max(current_replicas - 1, MIN_REPLICAS)
+    if queue_size == 0 and current_replicas > 1:
+        if p99_latency is None or p99_latency < 0.3:
+            return max(current_replicas - 1, MIN_REPLICAS)
+
     return current_replicas
 
 # === Get Current Replica Count ===

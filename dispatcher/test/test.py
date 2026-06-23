@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from base64 import b64encode
 
 dispatcher_url = "http://localhost:5001/query"  # dispatcher exposed port
-image_path = "./images/fire_truck.jpeg"
+image_path = "/app/images/fire_truck.jpeg"
 
 
 def send_request():

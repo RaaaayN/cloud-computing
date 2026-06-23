@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt
 import pandas as pd
 import requests
@@ -35,12 +38,18 @@ def query_prometheus(promql):
 
 
 def compute_target_replicas(p99_latency, queue_size, current_replicas):
-    if p99_latency is None or queue_size is None:
-        return current_replicas
-    if p99_latency > 0.005 or queue_size > 10:
+    if queue_size is None:
+        queue_size = 0
+    if queue_size > 200:
+        return min(current_replicas + 3, MAX_REPLICAS)
+    if queue_size > 50:
+        return min(current_replicas + 2, MAX_REPLICAS)
+    if queue_size > 10 or (p99_latency is not None and p99_latency > 0.4):
         return min(current_replicas + 1, MAX_REPLICAS)
-    elif p99_latency < 0.2 and queue_size < 3:
-        return max(current_replicas - 1, MIN_REPLICAS)
+    if queue_size == 0 and current_replicas > 1:
+        if p99_latency is None or p99_latency < 0.3:
+            return max(current_replicas - 1, MIN_REPLICAS)
+
     return current_replicas
 
 # === Get Replica Count ===
@@ -107,6 +116,7 @@ def generate_visuals(csv_path):
         plt.xticks(rotation=45)
         plt.tight_layout()
         plt.savefig("p99_latency_plot.png")
+        plt.close()
 
         # === Plot 2: Replica Count Over Time ===
         plt.figure(figsize=(10, 4))
@@ -118,6 +128,7 @@ def generate_visuals(csv_path):
         plt.xticks(rotation=45)
         plt.tight_layout()
         plt.savefig("replica_count_plot.png")
+        plt.close()
 
         # === Plot 3: Queue Size Over Time ===
         plt.figure(figsize=(10, 4))
@@ -128,6 +139,7 @@ def generate_visuals(csv_path):
         plt.xticks(rotation=45)
         plt.tight_layout()
         plt.savefig("queue_size_plot.png")
+        plt.close()
 
         print("[✓] Plots and summary CSV generated.")
     except Exception as e:
@@ -145,8 +157,11 @@ while True:
         current_replicas = get_current_replicas()
 
         timestamp = datetime.now().isoformat(timespec='seconds')
-        print(f"[{timestamp}] P99 latency: {p99_latency:.2f}s" if p99_latency else "P99 latency: N/A",
-              "| Queue size:", int(queue_size) if queue_size else "N/A")
+        #print(f"[{timestamp}] P99 latency: {p99_latency:.2f}s" if p99_latency else "P99 latency: N/A",
+              #"| Queue size:", int(queue_size) if queue_size else "N/A")
+        print(f"[{timestamp}] P99 latency: {p99_latency:.2f}s" if p99_latency is not None else f"[{timestamp}] P99 latency: N/A",
+               "| Queue size:", int(queue_size) if queue_size is not None else "N/A")
+
 
         new_replicas = compute_target_replicas(
             p99_latency, queue_size, current_replicas)
