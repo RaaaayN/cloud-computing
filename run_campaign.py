@@ -202,9 +202,9 @@ def plot_comparison():
 
         axes[0].axhline(0.5, color="red", ls="--", alpha=0.5, label="cible 0.5s")
         for ax, title, ylabel in [
-            (axes[0], "P99 Latency", "s"),
-            (axes[1], "Replica Count", "répliques"),
-            (axes[2], "Queue Size", "entrées"),
+            (axes[0], "P99 Latency (s)", "latency (s)"),
+            (axes[1], "Number of CPU Cores (1 core = 1 replica)", "CPU cores"),
+            (axes[2], "Queue Size", "requests"),
         ]:
             ax.set_title(title); ax.set_ylabel(ylabel)
             ax.legend(); ax.grid(alpha=0.3)
