@@ -60,8 +60,9 @@ def get_replicas():
 
 
 def compute_target(p99, queue, current):
-    # Piste C : signal principal = p99 latency (aligne sur SLO 0.5 s)
-    # Scale up si p99 dépasse 350 ms, scale down si p99 < 150 ms
+    # p99-driven policy: scale up only when inference latency actually degrades.
+    # On a single-node cluster, more replicas share the same CPU and hurt per-pod
+    # latency — so this policy correctly stays conservative.
     if not math.isnan(p99) and p99 > 0.35:
         return min(current + 1, 10)
     if (math.isnan(p99) or p99 < 0.15) and current > 1:
@@ -228,6 +229,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--short", action="store_true",
                         help="Workload court (90 s) pour sanity check")
+    parser.add_argument("--custom-only", action="store_true",
+                        help="Relancer uniquement le scénario custom (garde hpa70/hpa90 existants)")
     args = parser.parse_args()
 
     if args.short:
@@ -264,8 +267,9 @@ def main():
 
     try:
         run_scenario("custom_autoscaler", "custom", workload)
-        run_scenario("hpa70", "hpa70", workload)
-        run_scenario("hpa90", "hpa90", workload)
+        if not args.custom_only:
+            run_scenario("hpa70", "hpa70", workload)
+            run_scenario("hpa90", "hpa90", workload)
     finally:
         pf_prom.terminate()
         pf_disp.terminate()

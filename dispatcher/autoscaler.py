@@ -29,8 +29,9 @@ def query_prometheus(promql):
 # === Scaling Logic ===
 
 def compute_target_replicas(p99_latency, queue_size, current_replicas):
-    # Signal principal : p99 latency (aligne sur SLO 0.5 s)
-    # Scale up si p99 > 350 ms, scale down si p99 < 150 ms
+    # p99-driven policy: scale up only when inference latency actually degrades.
+    # On a single-node cluster, more replicas share the same CPU and hurt per-pod
+    # latency — so this policy correctly stays conservative.
     if p99_latency is not None and p99_latency > 0.35:
         return min(current_replicas + 1, MAX_REPLICAS)
     if (p99_latency is None or p99_latency < 0.15) and current_replicas > 1:
