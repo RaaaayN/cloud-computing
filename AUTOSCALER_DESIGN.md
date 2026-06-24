@@ -117,3 +117,33 @@ The practical conclusion is that **both single-replica strategies deliver equiva
 All three configurations see comparable queue dynamics during the burst (peak ~370 requests, avg ~155 requests while non-zero). This confirms that queue depth is independent of the scaling policy: the dispatcher's single forwarding thread is the throughput bottleneck (~13 req/s capacity vs 30 req/s burst), and the number of replicas does not change that. Requests that wait longer than 10 s are dropped by the dispatcher (`MAX_WAIT_TIME`), so the queue self-regulates regardless of how many replicas are running.
 
 This is why scaling on queue depth would be misguided: the queue grows and shrinks on the same trajectory for all three configurations, yet their p99 latencies differ significantly.
+
+---
+
+## Why Not Scaling Is the Right Decision
+
+It is tempting to interpret "the autoscaler never scales up" as a failure. The experiment below shows why it is in fact the correct behaviour for this environment.
+
+### Empirical validation: queue-based scaling with a multi-thread dispatcher
+
+A queue-depth-driven policy was tested with a multi-thread dispatcher (per-pod DNS discovery, one forwarding thread per replica, one concurrent request per pod via semaphore). The intent was to make throughput proportional to replica count (N replicas = N × 13 req/s) and trigger genuine scale-up during the burst.
+
+The autoscaler did scale — reaching **8 replicas** — but produced the worst results of all configurations:
+
+| Autoscaler | P99 avg | P99 max | CPU cores |
+|---|---|---|---|
+| Queue-based custom (8 replicas) | 0.185 s | 0.396 s | 8 |
+| HPA 70% | 0.150 s | 0.232 s | 2 |
+| HPA 90% | 0.105 s | 0.232 s | 1 |
+
+### Root cause: CPU is not horizontally scalable on a single node
+
+Minikube runs the entire cluster on one physical machine. The `CPU request = limit = 1` constraint per pod does not allocate a dedicated physical core — it sets a scheduling weight. When 8 pods run simultaneously, they compete for the same physical CPU budget. Each pod receives approximately 1/8 of the available compute, so inference time increases proportionally. The aggregate throughput remains constant at ~13 req/s regardless of replica count, while per-pod latency rises from ~90 ms to ~240 ms.
+
+A further consequence: with p99 elevated by contention (0.24 s > the 0.15 s scale-down threshold), the autoscaler could not scale back down — it stayed locked at 8 replicas for the remainder of the experiment, sustaining the degradation.
+
+### What this reveals about the p99-driven policy
+
+The p99 signal acts as a **closed-loop feedback mechanism**. It does not assume that more replicas will help — it waits for evidence that they are needed (p99 > 0.35 s). In this environment that evidence never arrives, because a single pod with undisturbed CPU access keeps p99 at ~90 ms throughout the burst. The policy therefore takes no action, which is exactly the optimal decision.
+
+This is the key difference with HPA: HPA uses CPU utilization as a proxy for "the service needs more capacity." On a shared-CPU single-node cluster, high CPU utilization does not imply that adding replicas will help — it implies the node is busy. The p99 metric cuts through this ambiguity by measuring the actual user-visible outcome directly.
