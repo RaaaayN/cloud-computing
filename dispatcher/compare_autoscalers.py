@@ -26,7 +26,7 @@ fig, axes = plt.subplots(2, 1, figsize=(14, 10))
 # --- Plot 1: P99 Latency ---
 for df in [custom, hpa70, hpa90]:
     axes[0].plot(df["elapsed"], df["P99_Latency"], label=df["label"].iloc[0])
-axes[0].axhline(y=0.5, color="red", linestyle="--", label="Target (0.5s)")
+axes[0].axhline(y=0.5, color="#9467BD", linestyle="--", label="Target (0.5s)")
 axes[0].set_title("P99 Latency Comparison")
 axes[0].set_xlabel("Elapsed Time (s)")
 axes[0].set_ylabel("P99 Latency (s)")

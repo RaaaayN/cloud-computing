@@ -109,7 +109,7 @@ def generate_visuals(csv_path):
 
         # === Plot 1: P99 Latency Over Time ===
         plt.figure(figsize=(10, 4))
-        plt.plot(df["Timestamp"], df["P99_Latency"], marker='o')
+        plt.plot(df["Timestamp"], df["P99_Latency"], marker='o' , color = '#1F77B4')
         plt.title("P99 Latency Over Time")
         plt.xlabel("Time")
         plt.ylabel("Latency (s)")
@@ -121,7 +121,7 @@ def generate_visuals(csv_path):
         # === Plot 2: Replica Count Over Time ===
         plt.figure(figsize=(10, 4))
         plt.plot(df["Timestamp"], df["Replica_Count"],
-                 marker='s', color="green")
+                 marker='s', color="#FF7F0E")
         plt.title("Replica Count Over Time")
         plt.xlabel("Time")
         plt.ylabel("Replicas")
@@ -132,7 +132,7 @@ def generate_visuals(csv_path):
 
         # === Plot 3: Queue Size Over Time ===
         plt.figure(figsize=(10, 4))
-        plt.plot(df["Timestamp"], df["Queue_Size"], marker='x', color="red")
+        plt.plot(df["Timestamp"], df["Queue_Size"], marker='x', color="#2CA02C")
         plt.title("Queue Size Over Time")
         plt.xlabel("Time")
         plt.ylabel("Queue Size")
@@ -172,10 +172,16 @@ while True:
             print("No scaling needed")
 
         # Log to CSV
+        actual_replicas = get_current_replicas()
+
         with open(CSV_PATH, mode='a', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow([timestamp, p99_latency or "N/A",
-                            queue_size or "N/A", current_replicas])
+            writer.writerow([
+                timestamp,
+                p99_latency if p99_latency is not None else "N/A",
+                queue_size if queue_size is not None else "N/A",
+                actual_replicas])
+    
 
         # Call at the end of the script
         generate_visuals(CSV_PATH)
