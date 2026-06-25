@@ -1,4 +1,24 @@
 # Cloud Computing Project 2026
+
+An image classification service running on Kubernetes, with our own autoscaler
+that we compare against the default Kubernetes HPA.
+
+The architecture and the details of how the autoscaler works are written up in
+[AUTOSCALER.md](AUTOSCALER.md).
+
+## Project layout
+
+```
+ml_model/              ResNet inference service (Flask) + Dockerfile
+dispatcher/            Redis dispatcher, autoscaler and analysis scripts + Dockerfile
+  autoscaler.py            our autoscaler (scaling only)
+  autoscaler_logger.py     same autoscaler, but logs to CSV and draws the plots
+  analyze_autoscaler_log.py  plots a single run over time
+  compare_autoscalers.py     compares the custom autoscaler against the two HPA runs
+  k8/                    Kubernetes manifests (apply them in the order below)
+  test/test.py          load test client (reads workload.txt)
+```
+
 ---
 
 ## Step 1 — Start Minikube
@@ -251,18 +271,14 @@ open replica_count_plot.png
 
 ## Pre-recorded Results
 
-The following files are included from a completed run:
+We left the files from one full run in `dispatcher/` so the results can be looked at
+without re-running everything.
 
-| File | Description |
-|---|---|
-| custom_autoscaler_log.csv | Custom autoscaler run log |
-| hpa70_log.csv | HPA 70% CPU run log |
-| hpa90_log.csv | HPA 90% CPU run log |
-| results/autoscaler_p99_latency_plot.png | P99 latency over time |
-| results/autoscaler_queue_size_plot.png | Queue size over time |
-| results/autoscaler_replica_count_plot.png | Replica count over time |
+The per-run plots come from `autoscaler_logger.py`, `comparison_plot.png` from
+`compare_autoscalers.py`, and `autoscaler_performance_plot.png` from
+`analyze_autoscaler_log.py`. All of them land in the current directory.
 
-To regenerate comparison without re-running experiments:
+To just redraw the comparison from the saved logs:
 
 ```bash
 cd dispatcher
@@ -273,15 +289,8 @@ python3 compare_autoscalers.py custom_autoscaler_log.csv hpa70_log.csv hpa90_log
 
 ## Autoscaling Logic
 
-The custom autoscaler runs every 15 seconds and uses queue depth as its primary signal:
-
-| Condition | Action |
-|---|---|
-| Queue > 200 | Scale up by 3 replicas |
-| Queue > 50 | Scale up by 2 replicas |
-| Queue > 10 OR P99 > 0.4s | Scale up by 1 replica |
-| Queue = 0 AND P99 < 0.3s | Scale down by 1 replica |
-| Otherwise | No change |
+The autoscaler checks the queue and P99 latency every 15 seconds and scales from
+there. The full rule table and the reasoning behind it are in [AUTOSCALER.md](AUTOSCALER.md).
 
 ---
 
@@ -295,40 +304,6 @@ Open http://localhost:9090 and run:
 | Queue Size | dispatcher_queue_size |
 | Total Requests | dispatcher_requests_total |
 | Forwarded Requests | dispatcher_requests_forwarded |
-
----
-
-## Troubleshooting
-
-**Pods stuck in Pending or ImagePullBackOff:**
-```bash
-kubectl describe pod <pod-name>
-```
-Most common cause: forgot to run eval $(minikube docker-env) before building images.
-
-**Prometheus targets showing DOWN:**
-```bash
-kubectl logs deployment/prometheus --tail=20
-```
-Restart port-forwards if they died.
-
-**Autoscaler shows N/A for all metrics:**
-```bash
-curl http://localhost:9090/api/v1/targets | python3 -m json.tool | grep health
-```
-Both targets must be UP before metrics appear.
-
-**Stale latency values with empty queue:**
-```bash
-kubectl exec deployment/redis -- redis-cli flushall
-kubectl scale deployment tu-cloud-project --replicas=1
-```
-Wait 2 minutes for Prometheus to clear old histogram data.
-
-**Port already in use:**
-```bash
-lsof -ti:<port> | xargs kill -9
-```
 
 ---
 
