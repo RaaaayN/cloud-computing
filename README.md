@@ -6,6 +6,11 @@ that we compare against the default Kubernetes HPA.
 The architecture and the details of how the autoscaler works are written up in
 [AUTOSCALER.md](AUTOSCALER.md).
 
+> The commands below are written for bash (Linux/macOS). When something is
+> different on Windows, the cmd (Command Prompt) version is shown right
+> underneath. Commands with no Windows note (`minikube`, `kubectl`, `docker`,
+> etc.) work the same in both. On Windows use `python` instead of `python3`.
+
 ## Project layout
 
 ```
@@ -50,6 +55,12 @@ Point your terminal to Minikube's Docker daemon:
 eval $(minikube docker-env)
 ```
 
+Windows (cmd):
+
+```bat
+@FOR /f "tokens=*" %i IN ('minikube -p minikube docker-env --shell cmd') DO @%i
+```
+
 Build the inference image:
 
 ```bash
@@ -70,6 +81,12 @@ Verify both images exist:
 
 ```bash
 docker images | grep -E "resnet-infer|dispatcher"
+```
+
+Windows (cmd):
+
+```bat
+docker images | findstr "resnet-infer dispatcher"
 ```
 
 ---
@@ -121,6 +138,18 @@ kubectl port-forward service/tu-cloud-project 8001:8001 &
 kubectl port-forward service/prometheus-service 9090:9090 &
 ```
 
+Windows (cmd). Free the ports, then start each forward in its own window:
+
+```bat
+for %p in (5001 8000 8001 9090) do (for /f "tokens=5" %a in ('netstat -aon ^| findstr :%p') do taskkill /F /PID %a 2>nul)
+start "" kubectl port-forward service/dispatcher-service 5001:5001
+start "" kubectl port-forward service/dispatcher-service 8000:8000
+start "" kubectl port-forward service/tu-cloud-project 8001:8001
+start "" kubectl port-forward service/prometheus-service 9090:9090
+```
+
+(Or simply open four separate terminals and run one `kubectl port-forward` in each.)
+
 ---
 
 ## Step 5 — Verify the Pipeline
@@ -134,6 +163,12 @@ curl http://localhost:5001/query \
   -d '{"image": "/app/images/fire_truck.jpeg"}'
 ```
 
+Windows (cmd):
+
+```bat
+curl http://localhost:5001/query -X POST -H "Content-Type: application/json" -d "{\"image\": \"/app/images/fire_truck.jpeg\"}"
+```
+
 Expected response:
 ```json
 {"message": "Queued"}
@@ -143,6 +178,12 @@ Verify Prometheus is scraping both services:
 
 ```bash
 curl http://localhost:9090/api/v1/targets | python3 -m json.tool | grep health
+```
+
+Windows (cmd):
+
+```bat
+curl http://localhost:9090/api/v1/targets | python -m json.tool | findstr health
 ```
 
 Both targets must show "health": "up" before running any load test.
@@ -157,6 +198,14 @@ Reset Redis queue and log before starting:
 kubectl exec deployment/redis -- redis-cli flushall
 kubectl scale deployment tu-cloud-project --replicas=1
 echo "Timestamp,P99_Latency,Queue_Size,Replica_Count" > dispatcher/autoscaler_log.csv
+```
+
+Windows (cmd). Note: no quotes around the header, or they end up in the file:
+
+```bat
+kubectl exec deployment/redis -- redis-cli flushall
+kubectl scale deployment tu-cloud-project --replicas=1
+echo Timestamp,P99_Latency,Queue_Size,Replica_Count>dispatcher\autoscaler_log.csv
 ```
 
 Terminal 1 — Start autoscaler first and wait for stable reading:
@@ -181,11 +230,24 @@ Terminal 3 — Watch pods scale:
 watch -n 5 kubectl get pods
 ```
 
+Windows (cmd) has no `watch`; use the built-in `-w`:
+
+```bat
+kubectl get pods -w
+```
+
 When load test reaches Second 630, stop the autoscaler with Ctrl+C:
 
 ```bash
 cp dispatcher/autoscaler_log.csv dispatcher/custom_autoscaler_log.csv
 echo "custom lines: $(wc -l < dispatcher/custom_autoscaler_log.csv)"
+```
+
+Windows (cmd):
+
+```bat
+copy dispatcher\autoscaler_log.csv dispatcher\custom_autoscaler_log.csv
+find /c /v "" dispatcher\custom_autoscaler_log.csv
 ```
 
 ---
@@ -200,6 +262,18 @@ kubectl get hpa
 
 kubectl exec deployment/redis -- redis-cli flushall
 echo "Timestamp,P99_Latency,Queue_Size,Replica_Count" > dispatcher/autoscaler_log.csv
+```
+
+Windows (cmd):
+
+```bat
+kubectl scale deployment tu-cloud-project --replicas=1
+kubectl delete hpa tu-cloud-project 2>nul
+kubectl autoscale deployment tu-cloud-project --cpu-percent=70 --min=1 --max=10
+kubectl get hpa
+
+kubectl exec deployment/redis -- redis-cli flushall
+echo Timestamp,P99_Latency,Queue_Size,Replica_Count>dispatcher\autoscaler_log.csv
 ```
 
 Terminal 1:
@@ -218,6 +292,13 @@ cp dispatcher/autoscaler_log.csv dispatcher/hpa70_log.csv
 kubectl delete hpa tu-cloud-project
 ```
 
+Windows (cmd):
+
+```bat
+copy dispatcher\autoscaler_log.csv dispatcher\hpa70_log.csv
+kubectl delete hpa tu-cloud-project
+```
+
 ---
 
 ## Step 8 — Run Scenario C: HPA at 90% CPU
@@ -229,6 +310,17 @@ kubectl get hpa
 
 kubectl exec deployment/redis -- redis-cli flushall
 echo "Timestamp,P99_Latency,Queue_Size,Replica_Count" > dispatcher/autoscaler_log.csv
+```
+
+Windows (cmd):
+
+```bat
+kubectl scale deployment tu-cloud-project --replicas=1
+kubectl autoscale deployment tu-cloud-project --cpu-percent=90 --min=1 --max=10
+kubectl get hpa
+
+kubectl exec deployment/redis -- redis-cli flushall
+echo Timestamp,P99_Latency,Queue_Size,Replica_Count>dispatcher\autoscaler_log.csv
 ```
 
 Terminal 1:
@@ -244,6 +336,13 @@ cd dispatcher/test && python3 test.py
 When done:
 ```bash
 cp dispatcher/autoscaler_log.csv dispatcher/hpa90_log.csv
+kubectl delete hpa tu-cloud-project
+```
+
+Windows (cmd):
+
+```bat
+copy dispatcher\autoscaler_log.csv dispatcher\hpa90_log.csv
 kubectl delete hpa tu-cloud-project
 ```
 
@@ -266,6 +365,8 @@ open p99_latency_plot.png
 open queue_size_plot.png
 open replica_count_plot.png
 ```
+
+Windows (cmd): use `start` instead of `open`, e.g. `start comparison_plot.png`.
 
 ---
 
