@@ -1,16 +1,18 @@
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import matplotlib.pyplot as plt
 import pandas as pd
 import requests
 import time
 import subprocess
 import csv
 import os
+import sys
 from datetime import datetime
 
-PROM_URL = "http://localhost:9090"
+_DEFAULT_PROM = "http://localhost:19090" if sys.platform == "win32" else "http://localhost:9090"
+PROM_URL = os.getenv("PROMETHEUS_URL", _DEFAULT_PROM)
+LOG_ONLY = os.getenv("AUTOSCALER_LOG_ONLY", "").lower() in ("1", "true", "yes")
 DEPLOYMENT_NAME = "tu-cloud-project"
 NAMESPACE = "default"
 MIN_REPLICAS = 1
@@ -163,13 +165,16 @@ while True:
                "| Queue size:", int(queue_size) if queue_size is not None else "N/A")
 
 
-        new_replicas = compute_target_replicas(
-            p99_latency, queue_size, current_replicas)
-
-        if new_replicas != current_replicas:
-            scale_to_replicas(new_replicas)
+        if LOG_ONLY:
+            print("Log-only mode — no scaling")
         else:
-            print("No scaling needed")
+            new_replicas = compute_target_replicas(
+                p99_latency, queue_size, current_replicas)
+
+            if new_replicas != current_replicas:
+                scale_to_replicas(new_replicas)
+            else:
+                print("No scaling needed")
 
         # Log to CSV
         actual_replicas = get_current_replicas()

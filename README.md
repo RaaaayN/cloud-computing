@@ -10,6 +10,10 @@ The architecture and the details of how the autoscaler works are written up in
 > different on Windows, the cmd (Command Prompt) version is shown right
 > underneath. Commands with no Windows note (`minikube`, `kubectl`, `docker`,
 > etc.) work the same in both. On Windows use `python` instead of `python3`.
+>
+> **Windows (Git Bash):** port 9090 is reserved by the OS — use
+> [README_windows.md](README_windows.md) for the full guide (Prometheus on
+> **19090**, one-click `scripts/run_all.sh`, troubleshooting).
 
 ## Project layout
 
@@ -22,6 +26,8 @@ dispatcher/            Redis dispatcher, autoscaler and analysis scripts + Docke
   compare_autoscalers.py     compares the custom autoscaler against the two HPA runs
   k8/                    Kubernetes manifests (apply them in the order below)
   test/test.py          load test client (reads workload.txt)
+scripts/run_all.sh     (Windows) one-click run of all three experiment scenarios
+README_windows.md      (Windows) port-forward, ports, and troubleshooting
 ```
 
 ---
@@ -138,17 +144,20 @@ kubectl port-forward service/tu-cloud-project 8001:8001 &
 kubectl port-forward service/prometheus-service 9090:9090 &
 ```
 
-Windows (cmd). Free the ports, then start each forward in its own window:
+> **Windows:** port 9090 is in a system-reserved range. Do **not** use the cmd
+> commands below for Prometheus — follow [README_windows.md](README_windows.md)
+> (forward to **19090** instead).
+
+Windows (cmd) — dispatcher / inference ports only (open each in its own window):
 
 ```bat
-for %p in (5001 8000 8001 9090) do (for /f "tokens=5" %a in ('netstat -aon ^| findstr :%p') do taskkill /F /PID %a 2>nul)
+for %p in (5001 8000 8001) do (for /f "tokens=5" %a in ('netstat -aon ^| findstr :%p') do taskkill /F /PID %a 2>nul)
 start "" kubectl port-forward service/dispatcher-service 5001:5001
 start "" kubectl port-forward service/dispatcher-service 8000:8000
 start "" kubectl port-forward service/tu-cloud-project 8001:8001
-start "" kubectl port-forward service/prometheus-service 9090:9090
 ```
 
-(Or simply open four separate terminals and run one `kubectl port-forward` in each.)
+For Prometheus on Windows, see [README_windows.md](README_windows.md).
 
 ---
 
@@ -278,7 +287,7 @@ echo Timestamp,P99_Latency,Queue_Size,Replica_Count>dispatcher\autoscaler_log.cs
 
 Terminal 1:
 ```bash
-cd dispatcher && python3 autoscaler_logger.py
+cd dispatcher && AUTOSCALER_LOG_ONLY=1 python3 autoscaler_logger.py
 ```
 
 Terminal 2:
@@ -325,7 +334,7 @@ echo Timestamp,P99_Latency,Queue_Size,Replica_Count>dispatcher\autoscaler_log.cs
 
 Terminal 1:
 ```bash
-cd dispatcher && python3 autoscaler_logger.py
+cd dispatcher && AUTOSCALER_LOG_ONLY=1 python3 autoscaler_logger.py
 ```
 
 Terminal 2:
